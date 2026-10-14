@@ -55,6 +55,15 @@
   .log{font-size:14px;color:var(--sub);margin:0;padding:0;list-style:none}
   .log li{padding:6px 0;border-top:1px solid var(--line)}
   .log b{color:var(--ink)}
+  .log button.tag{width:auto;min-height:44px;margin:0 6px 0 0;padding:4px 12px;font-size:16px;border-radius:8px;
+    background:transparent;color:var(--blue);border:1px solid var(--blue);text-decoration:underline}
+  .edit{margin-top:10px;padding:14px;border:2px solid var(--blue);border-radius:10px;color:var(--ink);font-size:16px;background:var(--panel)}
+  .edit label{font-size:14px;margin:10px 0 4px}
+  .edit input,.edit select{width:100%;font:inherit;font-size:18px;padding:10px;border:2px solid var(--line);
+    border-radius:8px;background:var(--bg);color:var(--ink)}
+  .edit .del{width:auto;min-height:44px;margin-top:28px;padding:8px 4px;font-size:14px;font-weight:400;
+    background:transparent;color:var(--sub);text-decoration:underline}
+  .edit .row button{font-size:18px;padding:14px 6px}
   pre{white-space:pre;overflow-x:auto;font-size:12px;background:var(--bg);padding:12px;border-radius:8px;
     border:1px solid var(--line);max-height:260px}
 </style>
@@ -79,6 +88,7 @@ const metaEl = document.getElementById("meta");
 // ---- 状態 ----
 // step: home | inspect | scan | odoStart | arrive | depart | done
 let S = load() || fresh();
+S.rows.forEach(r=>{ if(r.kind==="違法帰庫") r.kind = "帰庫"; });
 function fresh(){ return {step:"home", rows:[], manager:""}; }
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; } }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
@@ -207,17 +217,26 @@ function readOdo(){
 }
 function place(kind, btn){
   return async ()=>{
-    const odo = readOdo(); if(odo===null) return;
+    const odo = kind==="出発" ? "" : readOdo(); if(odo===null) return;
     const status = document.getElementById("status");
     view.querySelectorAll("button").forEach(b=>b.disabled=true);
-    const p = await getPlace(t=>status.textContent=t);
-    addRow(kind, {odo, ...p});
-    go(kind==="帰庫" ? "done" : kind==="出発" ? "arrive" : "depart");
+    // 「違法帰庫」ボタンも、記録上の種別は「帰庫」(位置情報は取得せず固定住所)
+    const illegal = kind==="違法帰庫", rowKind = illegal ? "帰庫" : kind;
+    const p = illegal ? {lat:"", lng:"", addr:"東京都江戸川区東小松川２丁目"}
+                      : await getPlace(t=>status.textContent=t);
+    // 出発画面(次の出発)からの帰庫: 直前の「回送で到着/実車で到着」の記録は消して「帰庫」に置き換える
+    if(rowKind==="帰庫" && S.step==="depart"){
+      const last = S.rows[S.rows.length-1];
+      if(last && (last.kind==="回送で到着" || last.kind==="実車で到着")) S.rows.pop();
+    }
+    addRow(rowKind, {odo, ...p});
+    go(rowKind==="帰庫" ? "done" : rowKind==="出発" ? "arrive" : "depart");
   };
 }
 
 function render(){
   stopCamera();
+  editIdx = null;
   const st = S.step;
   metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
   let h = "";
@@ -243,12 +262,14 @@ function render(){
          ${odoInput("現在のOdoメーター")}
          <p class="err" id="err"></p><p class="status" id="status"></p>
          <div class="row"><button id="kaiso">回送で到着</button><button id="jissha" class="alt">実車で到着</button></div>
-         <button id="kiko" class="ghost">帰庫する</button></div>`;
+         <div class="row"><button id="kiko" class="ghost">帰庫する</button><button id="kiko2" class="ghost">違法帰庫</button></div></div>`;
   }else if(st==="depart"){
     h = `<div class="panel"><p class="msg">次の出発</p>
-         ${odoInput("出発時のOdoメーター")}
          <p class="err" id="err"></p><p class="status" id="status"></p>
-         <button id="dep">出発</button></div>`;
+         <button id="dep">出発</button>
+         <div class="row"><button id="kiko" class="ghost">帰庫する</button><button id="kiko2" class="ghost">違法帰庫</button></div>
+         <div id="kikoBox" hidden>${odoInput("帰庫時のOdoメーター")}
+           <button id="kikoGo" class="alt"></button></div></div>`;
   }else if(st==="done"){
     h = `<div class="panel"><p class="msg">帰庫しました</p>
          <p class="note">運転記録(CSV)を保存または共有してください。</p>
@@ -262,9 +283,92 @@ function render(){
   renderLog();
   bind(st);
 }
+const EDITABLE = ["業務開始","日常点検","出発点呼","乗務開始","出発","回送で到着","実車で到着","帰庫"];
+const HAS_ODO = ["乗務開始","回送で到着","実車で到着","帰庫"];
+const HAS_PLACE = ["出発","回送で到着","実車で到着","帰庫"];
+let editIdx = null;
+const escH = v => String(v??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function editForm(r){
+  let f = `<div class="edit"><label for="e-time">日時</label>
+    <input id="e-time" type="datetime-local" step="1" value="${escH(r.time.replace(" ","T"))}">`;
+  if(HAS_ODO.includes(r.kind))
+    f += `<label for="e-odo">Odoメーター</label><input id="e-odo" type="number" inputmode="numeric" min="0" step="1" value="${escH(r.odo)}">`;
+  if(HAS_PLACE.includes(r.kind))
+    f += `<label for="e-addr">住所</label><input id="e-addr" type="text" value="${escH(r.addr)}">
+      <label for="e-lat">緯度</label><input id="e-lat" type="text" inputmode="decimal" value="${escH(r.lat)}">
+      <label for="e-lng">経度</label><input id="e-lng" type="text" inputmode="decimal" value="${escH(r.lng)}">`;
+  if(r.kind==="出発点呼"){
+    const cur = Object.values(MANAGERS).find(m=>r.note.endsWith(m)) || "";
+    f += `<label for="e-mgr">運行管理者・整備管理者(補助者)</label><select id="e-mgr">
+      ${Object.values(MANAGERS).map(m=>`<option${m===cur?" selected":""}>${m}</option>`).join("")}</select>`;
+  }else{
+    f += `<label for="e-note">備考</label><input id="e-note" type="text" value="${escH(r.note)}">`;
+  }
+  return f + `<p class="err" id="e-err"></p>
+    <div class="row"><button id="e-save">この内容で修正</button><button id="e-cancel" class="ghost">キャンセル</button></div>
+    <button id="e-del" class="del">この記録を消去</button></div>`;
+}
 function renderLog(){
-  logEl.innerHTML = S.rows.slice().reverse().map(r=>
-    `<li><b>${r.kind}</b> ${r.time}${r.odo!==""?` / ${r.odo} km`:""}${r.addr?`<br>${r.addr}`:""}</li>`).join("");
+  logEl.innerHTML = S.rows.map((r,i)=>({r,i})).reverse().map(({r,i})=>{
+    const tag = EDITABLE.includes(r.kind)
+      ? `<button class="tag" data-i="${i}" aria-expanded="${editIdx===i}">${r.kind}</button>` : `<b>${r.kind}</b>`;
+    return `<li>${tag} ${r.time}${r.odo!==""?` / ${escH(r.odo)} km`:""}${r.addr?`<br>${escH(r.addr)}`:""}${editIdx===i?editForm(r):""}</li>`;
+  }).join("");
+  logEl.querySelectorAll(".tag").forEach(b=>b.onclick=()=>{
+    const i = Number(b.dataset.i); editIdx = (editIdx===i) ? null : i; renderLog();
+    if(editIdx!==null){ const f=logEl.querySelector(".edit"); if(f) f.scrollIntoView({block:"center",behavior:"smooth"}); }
+  });
+  const sv = document.getElementById("e-save");
+  if(sv){
+    sv.onclick = ()=>saveEdit(editIdx);
+    document.getElementById("e-cancel").onclick = ()=>{ editIdx=null; renderLog(); };
+    document.getElementById("e-del").onclick = ()=>deleteRow(editIdx);
+  }
+}
+const ARR = ["回送で到着","実車で到着"];
+const STEP_AFTER = {"業務開始":"inspect","日常点検":"scan","出発点呼":"odoStart","乗務開始":"arrive",
+  "出発":"arrive","回送で到着":"depart","実車で到着":"depart","帰庫":"done"};
+// 「出発」と「到着」は組で消す(乗務開始に続く最初の到着は、到着だけを消す)
+function pairIdx(i){
+  const k = S.rows[i].kind, idx = [i];
+  if(k==="出発"){ const n = S.rows[i+1]; if(n && ARR.includes(n.kind)) idx.push(i+1); }
+  else if(ARR.includes(k)){ const b = S.rows[i-1]; if(b && b.kind==="出発") idx.push(i-1); }
+  return idx;
+}
+function deleteRow(i){
+  const idx = pairIdx(i);
+  const list = idx.slice().sort((a,b)=>a-b).map(j=>`・${S.rows[j].kind} ${S.rows[j].time}`).join("\n");
+  if(!confirm(`次の記録を消去します。よろしいですか？\n${list}`)) return;
+  S.rows = S.rows.filter((_,j)=>!idx.includes(j));
+  const m = S.rows.slice().reverse().find(r=>r.kind==="出発点呼");
+  S.manager = m ? (Object.values(MANAGERS).find(x=>m.note.endsWith(x)) || "") : "";
+  const last = S.rows[S.rows.length-1];
+  S.step = last ? (STEP_AFTER[last.kind] || "arrive") : "home";
+  editIdx = null; save(); render();
+}
+function saveEdit(i){
+  const r = S.rows[i], err = document.getElementById("e-err"), g = id => document.getElementById(id);
+  let t = g("e-time").value;
+  if(!t){ err.textContent = "日時を入力してください"; return; }
+  t = t.replace("T"," "); if(t.length===16) t += ":00";
+  let odo = r.odo, lat = r.lat, lng = r.lng, addr = r.addr;
+  if(HAS_ODO.includes(r.kind)){
+    odo = g("e-odo").value.trim();
+    if(!/^\d+$/.test(odo)){ err.textContent = "Odoメーターを数値で入力してください"; return; }
+  }
+  if(HAS_PLACE.includes(r.kind)){
+    addr = g("e-addr").value.trim(); lat = g("e-lat").value.trim(); lng = g("e-lng").value.trim();
+    if((lat && !/^-?\d+(\.\d+)?$/.test(lat)) || (lng && !/^-?\d+(\.\d+)?$/.test(lng))){
+      err.textContent = "緯度・経度は数値で入力してください"; return; }
+  }
+  r.time = t; r.odo = odo; r.lat = lat; r.lng = lng; r.addr = addr;
+  if(r.kind==="出発点呼"){
+    const m = g("e-mgr").value; r.note = `運行管理者・整備管理者(補助者): ${m}`; S.manager = m;
+  }else{ r.note = g("e-note").value.trim(); }
+  editIdx = null; save();
+  metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
+  if(S.step==="done") render(); else renderLog();
 }
 const $ = id => document.getElementById(id);
 function bind(st){
@@ -276,11 +380,19 @@ function bind(st){
   }
   if(st==="odoStart") $("begin").onclick = ()=>{ const o=readOdo(); if(o===null) return; addRow("乗務開始",{odo:o}); go("arrive"); };
   if(st==="arrive"){
+    $("kiko2").onclick = place("違法帰庫");
     $("kaiso").onclick = place("回送で到着");
     $("jissha").onclick = place("実車で到着");
     $("kiko").onclick = place("帰庫");
   }
-  if(st==="depart") $("dep").onclick = place("出発");
+  if(st==="depart"){
+    $("dep").onclick = place("出発");
+    let pend = "帰庫";
+    const open = k => { pend = k; $("kikoGo").textContent = k+"を記録"; $("kikoBox").hidden = false; $("odo").focus(); };
+    $("kiko").onclick = ()=>open("帰庫");
+    $("kiko2").onclick = ()=>open("違法帰庫");
+    $("kikoGo").onclick = ()=>place(pend)();
+  }
   if(st==="done"){
     $("dl").onclick = download; $("sh").onclick = share;
     $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
@@ -300,7 +412,7 @@ async function resolvePending(){
     await new Promise(ok=>setTimeout(ok,1100)); // 無料サーバーへの負荷配慮
   }
   resolving = false;
-  if(S.step==="done"){ render(); } else { renderLog(); }
+  if(editIdx===null){ if(S.step==="done") render(); else renderLog(); }
 }
 function updateNet(){
   const n = $("net"); if(!n) return;

@@ -1,5 +1,5 @@
 // アプリ本体を更新したら VERSION を変えると、端末のキャッシュが入れ替わります
-const VERSION = "nippo-v2";
+const VERSION = "nippo-v9";
 const FILES = ["./","./index.html","./jsQR.js","./manifest.json",
   "./icon-192.png","./icon-512.png","./icon-maskable-512.png","./apple-touch-icon.png"];
 
