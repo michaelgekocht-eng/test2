@@ -53,7 +53,8 @@
   .err{color:var(--warn);font-weight:700;min-height:1.6em}
   .status{color:var(--sub);font-size:15px;min-height:1.6em}
   .log{font-size:14px;color:var(--sub);margin:0;padding:0;list-style:none}
-  .log li{padding:6px 0;border-top:1px solid var(--line)}
+  .grp{border:2px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;background:var(--panel)}
+  .rec + .rec{margin-top:10px}
   .log b{color:var(--ink)}
   .log button.tag{width:auto;min-height:44px;margin:0 6px 0 0;padding:4px 12px;font-size:16px;border-radius:8px;
     background:transparent;color:var(--blue);border:1px solid var(--blue);text-decoration:underline}
@@ -337,12 +338,32 @@ function editForm(r){
     <div class="row"><button id="e-save">この内容で修正</button><button id="e-cancel" class="ghost">キャンセル</button></div>
     <button id="e-del" class="del">この記録を消去</button></div>`;
 }
+// 表示用のグループ分け: 準備(業務開始〜出発点呼) / 出発→到着の1組 / 帰庫
+function groupRows(){
+  const g = [];
+  S.rows.forEach((r,i)=>{
+    const last = g[g.length-1], k = r.kind;
+    if(k==="業務開始"||k==="日常点検"||k==="出発点呼"){
+      if(last && last.type==="prep") last.items.push(i); else g.push({type:"prep", items:[i]});
+    }else if(k==="乗務開始"||k==="出発"){
+      g.push({type:"leg", items:[i]});
+    }else if(k==="回送で到着"||k==="実車で到着"){
+      if(last && last.type==="leg" && last.items.length===1) last.items.push(i); else g.push({type:"leg", items:[i]});
+    }else{
+      g.push({type:"end", items:[i]});
+    }
+  });
+  return g;
+}
 function renderLog(){
-  logEl.innerHTML = S.rows.map((r,i)=>({r,i})).reverse().map(({r,i})=>{
+  const recHtml = i => {
+    const r = S.rows[i];
     const tag = EDITABLE.includes(r.kind)
       ? `<button class="tag" data-i="${i}" aria-expanded="${editIdx===i}">${r.kind}</button>` : `<b>${r.kind}</b>`;
-    return `<li>${tag} ${r.time}${r.odo!==""?` / ${escH(r.odo)} km`:""}${r.addr?`<br>${escH(r.addr)}`:""}${editIdx===i?editForm(r):""}</li>`;
-  }).join("");
+    return `<div class="rec">${tag} ${r.time}${r.odo!==""?` / ${escH(r.odo)} km`:""}${r.addr?`<br>${escH(r.addr)}`:""}${editIdx===i?editForm(r):""}</div>`;
+  };
+  // 新しい組を上に表示。1組(出発→到着)を四角い枠で囲む
+  logEl.innerHTML = groupRows().reverse().map(g=>`<li class="grp">${g.items.map(recHtml).join("")}</li>`).join("");
   logEl.querySelectorAll(".tag").forEach(b=>b.onclick=()=>{
     const i = Number(b.dataset.i); editIdx = (editIdx===i) ? null : i; renderLog();
     if(editIdx!==null){ const f=logEl.querySelector(".edit"); if(f) f.scrollIntoView({block:"center",behavior:"smooth"}); }
