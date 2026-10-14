@@ -233,9 +233,11 @@ function place(kind, ids){
     const status = document.getElementById(ids.status);
     document.querySelectorAll("button").forEach(b=>b.disabled=true);
     // 「違法帰庫」ボタンも、記録上の種別は「帰庫」(位置情報は取得せず固定住所)
-    const illegal = kind==="違法帰庫", rowKind = illegal ? "帰庫" : kind;
-    const p = illegal ? {lat:"", lng:"", addr:"東京都江戸川区東小松川２丁目"}
-                      : await getPlace(t=>{ if(status) status.textContent = t; });
+    // 「違法出庫」ボタンも同様に、記録上の種別は「乗務開始」(固定住所)
+    const FIXED = {"違法帰庫":["帰庫","東京都江戸川区東小松川２丁目"], "違法出庫":["乗務開始","東京都江戸川区東小松川２丁目１０"]};
+    const fx = FIXED[kind], rowKind = fx ? fx[0] : kind;
+    const p = fx ? {lat:"", lng:"", addr:fx[1]}
+                 : await getPlace(t=>{ if(status) status.textContent = t; });
     // 出発画面(次の出発)からの帰庫: 直前の「到着」の記録は消して「帰庫」に置き換える
     if(rowKind==="帰庫" && S.step==="depart"){
       const last = S.rows[S.rows.length-1];
@@ -266,11 +268,13 @@ function render(){
   const st = S.step;
   document.getElementById("modal").innerHTML = "";
   const top = document.getElementById("topR");
-  top.innerHTML = (st==="arrive"||st==="depart") ? '<button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button>' : "";
-  if(top.firstChild){
+  top.innerHTML = (st==="arrive"||st==="depart") ? '<button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button>'
+                : st==="odoStart" ? '<button id="deg">違法出庫</button>' : "";
+  if(st==="arrive"||st==="depart"){
     document.getElementById("kiko").onclick = ()=>openKiko("帰庫");
     document.getElementById("kiko2").onclick = ()=>openKiko("違法帰庫");
   }
+  if(st==="odoStart") document.getElementById("deg").onclick = place("違法出庫");
   metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
   let h = "";
   if(st==="home"){
