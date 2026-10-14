@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f6b4a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="運転日報">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>運転日報</title>
+<style>
+  :root{
+    --bg:#f3f4f1; --panel:#ffffff; --ink:#1d2421; --sub:#5d6862; --line:#d5d9d3;
+    --go:#1f6b4a; --go-ink:#fff; --warn:#a4380f; --blue:#1d4f8a;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#141816; --panel:#1e2421; --ink:#eef2ee; --sub:#9aa69f; --line:#34403a;
+      --go:#3fae7e; --go-ink:#06140d; --warn:#ff9a70; --blue:#7fb2ee; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;font-size:18px;line-height:1.6}
+  html,body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
+  body{-webkit-user-select:none;user-select:none}
+  input,pre{-webkit-user-select:text;user-select:text}
+  main{max-width:520px;margin:0 auto;min-height:100dvh;
+    padding:calc(env(safe-area-inset-top) + 16px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 40px) calc(env(safe-area-inset-left) + 16px)}
+  button{touch-action:manipulation;min-height:60px}
+  #net{display:inline-block;font-size:13px;padding:2px 10px;border-radius:99px;border:1px solid var(--line);margin-left:8px}
+  #net.off{color:var(--warn);border-color:var(--warn)}
+  input[type=number]{font-size:32px}
+  h1{font-size:20px;margin:0 0 4px}
+  .meta{color:var(--sub);font-size:14px;margin-bottom:20px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}
+  .msg{font-size:24px;font-weight:700;margin:0 0 12px;line-height:1.4}
+  .note{color:var(--sub);font-size:15px;margin:0 0 12px}
+  label{display:block;font-weight:700;margin-bottom:6px}
+  input[type=number]{width:100%;font-size:28px;padding:12px;border:2px solid var(--line);border-radius:8px;
+    background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums}
+  input[type=number]:focus{outline:3px solid var(--blue);border-color:var(--blue)}
+  button{width:100%;font:inherit;font-size:22px;font-weight:700;padding:18px;border:0;border-radius:10px;
+    background:var(--go);color:var(--go-ink);cursor:pointer;margin-top:12px}
+  button.alt{background:var(--blue);color:#fff}
+  button.ghost{background:transparent;color:var(--ink);border:2px solid var(--line);font-size:18px;padding:12px}
+  button:disabled{opacity:.45;cursor:wait}
+  button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row button{margin-top:12px;font-size:20px;padding:18px 8px}
+  video{width:100%;border-radius:8px;background:#000;aspect-ratio:1/1;object-fit:cover}
+  .err{color:var(--warn);font-weight:700;min-height:1.6em}
+  .status{color:var(--sub);font-size:15px;min-height:1.6em}
+  .log{font-size:14px;color:var(--sub);margin:0;padding:0;list-style:none}
+  .log li{padding:6px 0;border-top:1px solid var(--line)}
+  .log b{color:var(--ink)}
+  pre{white-space:pre;overflow-x:auto;font-size:12px;background:var(--bg);padding:12px;border-radius:8px;
+    border:1px solid var(--line);max-height:260px}
+</style>
+</head>
+<body>
+<main>
+  <h1>運転日報<span id="net"></span></h1>
+  <div class="meta" id="meta"></div>
+  <div id="view"></div>
+  <ul class="log" id="log"></ul>
+</main>
+
+<script src="jsQR.js"></script>
+<script>
+"use strict";
+const MANAGERS = {1:"中村", 2:"内田レ", 3:"内田ヒ"};
+const KEY = "unten-nippo-v1";
+const view = document.getElementById("view");
+const logEl = document.getElementById("log");
+const metaEl = document.getElementById("meta");
+
+// ---- 状態 ----
+// step: home | inspect | scan | odoStart | arrive | depart | done
+let S = load() || fresh();
+function fresh(){ return {step:"home", rows:[], manager:""}; }
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+function go(step){ S.step = step; save(); render(); }
+
+const pad = n => String(n).padStart(2,"0");
+function now(){
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function addRow(kind, o={}){
+  S.rows.push({kind, time:o.time||now(), odo:o.odo??"", lat:o.lat??"", lng:o.lng??"", addr:o.addr||"", note:o.note||""});
+  save();
+}
+
+// ---- 位置情報 ----
+function getPosition(){
+  return new Promise((res, rej)=>{
+    if(!navigator.geolocation) return rej(new Error("位置情報に未対応"));
+    navigator.geolocation.getCurrentPosition(res, rej, {enableHighAccuracy:true, timeout:15000, maximumAge:0});
+  });
+}
+async function reverseGeocode(lat, lng){
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=ja&lat=${lat}&lon=${lng}`;
+  const r = await fetch(url);
+  if(!r.ok) throw new Error("住所取得エラー");
+  const j = await r.json();
+  const parts = (j.display_name||"").split(",").map(s=>s.trim())
+    .filter(s=>s && s!=="日本" && !/^\d{3}-\d{4}$/.test(s));
+  return parts.reverse().join("");
+}
+async function getPlace(setStatus){
+  setStatus("位置情報を取得中…");
+  let lat="", lng="", addr="";
+  try{
+    const p = await getPosition();
+    lat = p.coords.latitude.toFixed(6); lng = p.coords.longitude.toFixed(6);
+    if(navigator.onLine){
+      setStatus("住所を取得中…");
+      try{ addr = await Promise.race([reverseGeocode(lat, lng), new Promise((_,j)=>setTimeout(j,8000))]); }
+      catch(e){ addr = ""; }
+    }
+  }catch(e){
+    addr = "(位置情報取得失敗)";
+    lat = ""; lng = "";
+  }
+  return {lat, lng, addr};
+}
+
+// ---- QR ----
+let stream=null, scanning=false;
+function stopCamera(){
+  scanning=false;
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+}
+async function startScan(){
+  const video = document.getElementById("cam");
+  const err = document.getElementById("err");
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}, audio:false});
+    video.srcObject = stream; video.setAttribute("playsinline",""); await video.play();
+  }catch(e){
+    err.textContent = "カメラを使えません。下のボタンで手動選択してください。";
+    document.getElementById("manual").hidden = false;
+    return;
+  }
+  scanning = true;
+  const cv = document.createElement("canvas"), ctx = cv.getContext("2d", {willReadFrequently:true});
+  const tick = ()=>{
+    if(!scanning) return;
+    if(video.readyState === video.HAVE_ENOUGH_DATA){
+      cv.width = video.videoWidth; cv.height = video.videoHeight;
+      ctx.drawImage(video,0,0,cv.width,cv.height);
+      const img = ctx.getImageData(0,0,cv.width,cv.height);
+      const code = window.jsQR && jsQR(img.data, img.width, img.height);
+      if(code){
+        const v = code.data.trim();
+        if(/^[1-9]\d*$/.test(v) && MANAGERS[Number(v)]){ chooseManager(Number(v)); return; }
+        err.textContent = `「${v}」は登録されていないQRコードです`;
+      }
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+function chooseManager(n){
+  stopCamera();
+  S.manager = MANAGERS[n];
+  addRow("出発点呼", {note:`運行管理者・整備管理者(補助者): ${S.manager}`});
+  go("odoStart");
+}
+
+// ---- CSV ----
+function csvText(){
+  const head = ["種別","日時","Odoメーター","緯度","経度","住所","備考"];
+  const esc = v => `"${String(v??"").replace(/"/g,'""')}"`;
+  return [head, ...S.rows.map(r=>[r.kind,r.time,r.odo,r.lat,r.lng,r.addr,r.note])]
+    .map(a=>a.map(esc).join(",")).join("\r\n");
+}
+function csvFile(){
+  const name = `運転日報_${(S.rows[0]?.time||now()).slice(0,10)}.csv`;
+  return new File(["\uFEFF"+csvText()], name, {type:"text/csv"});
+}
+function download(){
+  const f = csvFile(), a = document.createElement("a");
+  a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+async function share(){
+  const f = csvFile();
+  try{
+    if(navigator.canShare && navigator.canShare({files:[f]})){ await navigator.share({files:[f], title:f.name}); }
+    else if(navigator.share){ await navigator.share({title:f.name, text:csvText()}); }
+    else{ download(); alert("共有に未対応の端末のためダウンロードしました"); }
+  }catch(e){ /* キャンセル */ }
+}
+
+// ---- 描画 ----
+function odoInput(label){
+  return `<label for="odo">${label}</label><input id="odo" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 123456">`;
+}
+function readOdo(){
+  const v = document.getElementById("odo").value.trim();
+  if(!/^\d+$/.test(v)){ document.getElementById("err").textContent = "Odoメーターを数値で入力してください"; return null; }
+  document.getElementById("err").textContent = ""; return v;
+}
+function place(kind, btn){
+  return async ()=>{
+    const odo = readOdo(); if(odo===null) return;
+    const status = document.getElementById("status");
+    view.querySelectorAll("button").forEach(b=>b.disabled=true);
+    const p = await getPlace(t=>status.textContent=t);
+    addRow(kind, {odo, ...p});
+    go(kind==="帰庫" ? "done" : kind==="出発" ? "arrive" : "depart");
+  };
+}
+
+function render(){
+  stopCamera();
+  const st = S.step;
+  metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
+  let h = "";
+  if(st==="home"){
+    h = `<div class="panel"><p class="note">乗務前にボタンを押してください。</p>
+         <button id="start">業務を開始する</button></div>`;
+  }else if(st==="inspect"){
+    h = `<div class="panel"><p class="msg">日常点検をしてください</p>
+         <button id="ok">異常なし</button></div>`;
+  }else if(st==="scan"){
+    h = `<div class="panel"><p class="msg">点呼を受けてください</p>
+         <p class="note">運行管理者・整備管理者(補助者)のQRコードを読み取ってください。</p>
+         <video id="cam" muted></video><p class="err" id="err"></p>
+         <div id="manual" hidden><div class="row">
+           ${Object.entries(MANAGERS).map(([n,m])=>`<button class="ghost" data-m="${n}">${m}</button>`).join("")}
+         </div></div></div>`;
+  }else if(st==="odoStart"){
+    h = `<div class="panel"><p class="msg">乗務を開始してください</p>
+         ${odoInput("開始時Odoメーターを記録してください")}
+         <p class="err" id="err"></p><button id="begin">乗務開始</button></div>`;
+  }else if(st==="arrive"){
+    h = `<div class="panel"><p class="msg">Odoメーターを記録する</p>
+         ${odoInput("現在のOdoメーター")}
+         <p class="err" id="err"></p><p class="status" id="status"></p>
+         <div class="row"><button id="kaiso">回送で到着</button><button id="jissha" class="alt">実車で到着</button></div>
+         <button id="kiko" class="ghost">帰庫する</button></div>`;
+  }else if(st==="depart"){
+    h = `<div class="panel"><p class="msg">次の出発</p>
+         ${odoInput("出発時のOdoメーター")}
+         <p class="err" id="err"></p><p class="status" id="status"></p>
+         <button id="dep">出発</button></div>`;
+  }else if(st==="done"){
+    h = `<div class="panel"><p class="msg">帰庫しました</p>
+         <p class="note">運転記録(CSV)を保存または共有してください。</p>
+         ${S.rows.some(r=>r.lat && !r.addr) ? `<p class="err">住所が未取得の行があります。通信が戻ると自動で補完されます。緯度経度は記録済みです。</p>` : ""}
+         <pre>${csvText().replace(/&/g,"&amp;").replace(/</g,"&lt;")}</pre>
+         <button id="dl">CSVをダウンロード</button>
+         <button id="sh" class="alt">共有</button>
+         <button id="reset" class="ghost">新しい日報を始める</button></div>`;
+  }
+  view.innerHTML = h;
+  renderLog();
+  bind(st);
+}
+function renderLog(){
+  logEl.innerHTML = S.rows.slice().reverse().map(r=>
+    `<li><b>${r.kind}</b> ${r.time}${r.odo!==""?` / ${r.odo} km`:""}${r.addr?`<br>${r.addr}`:""}</li>`).join("");
+}
+const $ = id => document.getElementById(id);
+function bind(st){
+  if(st==="home") $("start").onclick = ()=>{ addRow("業務開始"); go("inspect"); };
+  if(st==="inspect") $("ok").onclick = ()=>{ addRow("日常点検", {note:"異常なし"}); go("scan"); };
+  if(st==="scan"){
+    view.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>chooseManager(Number(b.dataset.m)));
+    startScan();
+  }
+  if(st==="odoStart") $("begin").onclick = ()=>{ const o=readOdo(); if(o===null) return; addRow("乗務開始",{odo:o}); go("arrive"); };
+  if(st==="arrive"){
+    $("kaiso").onclick = place("回送で到着");
+    $("jissha").onclick = place("実車で到着");
+    $("kiko").onclick = place("帰庫");
+  }
+  if(st==="depart") $("dep").onclick = place("出発");
+  if(st==="done"){
+    $("dl").onclick = download; $("sh").onclick = share;
+    $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
+  }
+}
+
+// ---- オフライン対応 ----
+// 住所が未取得の行(緯度経度のみ)は、通信が戻ったときに自動で住所を補完する
+let resolving = false;
+async function resolvePending(){
+  if(resolving || !navigator.onLine) return;
+  const todo = S.rows.filter(r=>r.lat && !r.addr);
+  if(!todo.length) return;
+  resolving = true;
+  for(const r of todo){
+    try{ r.addr = await reverseGeocode(r.lat, r.lng); save(); }catch(e){ break; }
+    await new Promise(ok=>setTimeout(ok,1100)); // 無料サーバーへの負荷配慮
+  }
+  resolving = false;
+  if(S.step==="done"){ render(); } else { renderLog(); }
+}
+function updateNet(){
+  const n = $("net"); if(!n) return;
+  n.textContent = navigator.onLine ? "オンライン" : "オフライン";
+  n.className = navigator.onLine ? "" : "off";
+  if(navigator.onLine) resolvePending();
+}
+window.addEventListener("online", updateNet);
+window.addEventListener("offline", updateNet);
+updateNet();
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+// 乗務中に画面が消えないようにする
+let wl=null;
+async function keepAwake(){ try{ if(S.step!=="home" && S.step!=="done") wl = await navigator.wakeLock.request("screen"); }catch(e){} }
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") keepAwake(); });
+keepAwake();
+render();
+</script>
+</body>
+</html>
