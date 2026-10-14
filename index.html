@@ -61,6 +61,13 @@
   .edit label{font-size:14px;margin:10px 0 4px}
   .edit input,.edit select{width:100%;font:inherit;font-size:18px;padding:10px;border:2px solid var(--line);
     border-radius:8px;background:var(--bg);color:var(--ink)}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  #topR{display:flex;flex-shrink:0}
+  #topR button{width:auto;min-height:30px;margin:0 0 0 6px;padding:3px 8px;font-size:12px;font-weight:600;
+    background:transparent;color:var(--sub);border:1px solid var(--line);border-radius:6px}
+  .mback{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;
+    padding:16px;z-index:10;overflow:auto}
+  .mpanel{width:100%;max-width:480px;margin:0}
   .edit .del{width:auto;min-height:44px;margin-top:28px;padding:8px 4px;font-size:14px;font-weight:400;
     background:transparent;color:var(--sub);text-decoration:underline}
   .edit .row button{font-size:18px;padding:14px 6px}
@@ -70,11 +77,12 @@
 </head>
 <body>
 <main>
-  <h1>運転日報<span id="net"></span></h1>
+  <header class="hd"><h1>運転日報<span id="net"></span></h1><div id="topR"></div></header>
   <div class="meta" id="meta"></div>
   <div id="view"></div>
   <ul class="log" id="log"></ul>
 </main>
+<div id="modal"></div>
 
 <script src="jsQR.js"></script>
 <script>
@@ -210,34 +218,58 @@ async function share(){
 function odoInput(label){
   return `<label for="odo">${label}</label><input id="odo" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 123456">`;
 }
-function readOdo(){
-  const v = document.getElementById("odo").value.trim();
-  if(!/^\d+$/.test(v)){ document.getElementById("err").textContent = "Odoメーターを数値で入力してください"; return null; }
-  document.getElementById("err").textContent = ""; return v;
+function readOdo(oid="odo", eid="err"){
+  const v = document.getElementById(oid).value.trim();
+  const e = document.getElementById(eid);
+  if(!/^\d+$/.test(v)){ e.textContent = "Odoメーターを数値で入力してください"; return null; }
+  e.textContent = ""; return v;
 }
-function place(kind, btn){
+function place(kind, ids){
+  ids = ids || {odo:"odo", err:"err", status:"status"};
   return async ()=>{
-    const odo = kind==="出発" ? "" : readOdo(); if(odo===null) return;
-    const status = document.getElementById("status");
-    view.querySelectorAll("button").forEach(b=>b.disabled=true);
+    const odo = kind==="出発" ? "" : readOdo(ids.odo, ids.err);
+    if(odo===null) return;
+    const status = document.getElementById(ids.status);
+    document.querySelectorAll("button").forEach(b=>b.disabled=true);
     // 「違法帰庫」ボタンも、記録上の種別は「帰庫」(位置情報は取得せず固定住所)
     const illegal = kind==="違法帰庫", rowKind = illegal ? "帰庫" : kind;
     const p = illegal ? {lat:"", lng:"", addr:"東京都江戸川区東小松川２丁目"}
-                      : await getPlace(t=>status.textContent=t);
-    // 出発画面(次の出発)からの帰庫: 直前の「回送で到着/実車で到着」の記録は消して「帰庫」に置き換える
+                      : await getPlace(t=>{ if(status) status.textContent = t; });
+    // 出発画面(次の出発)からの帰庫: 直前の「到着」の記録は消して「帰庫」に置き換える
     if(rowKind==="帰庫" && S.step==="depart"){
       const last = S.rows[S.rows.length-1];
       if(last && (last.kind==="回送で到着" || last.kind==="実車で到着")) S.rows.pop();
     }
     addRow(rowKind, {odo, ...p});
-    go(rowKind==="帰庫" ? "done" : rowKind==="出発" ? "arrive" : "depart");
+    go(rowKind==="帰庫" ? "done" : (rowKind==="出発"||rowKind==="乗務開始") ? "arrive" : "depart");
   };
+}
+// 帰庫の確認ダイアログ
+function openKiko(kind){
+  const cur = document.getElementById("odo");
+  document.getElementById("modal").innerHTML = `<div class="mback"><div class="panel mpanel" role="dialog" aria-modal="true">
+    <p class="msg">本当に帰庫するの？</p>
+    ${kind==="違法帰庫" ? '<p class="note">(違法帰庫: 位置情報は取得せず、固定住所を記録します)</p>' : ""}
+    <label for="m-odo">帰庫時のOdoメーター</label>
+    <input id="m-odo" type="number" inputmode="numeric" min="0" step="1" value="${cur ? escH(cur.value) : ""}">
+    <p class="err" id="m-err"></p><p class="status" id="m-status"></p>
+    <button id="m-yes">疲れたので帰庫します</button>
+    <button id="m-no" class="ghost">やっぱりまだ働きます</button></div></div>`;
+  document.getElementById("m-yes").onclick = place(kind, {odo:"m-odo", err:"m-err", status:"m-status"});
+  document.getElementById("m-no").onclick = ()=>{ document.getElementById("modal").innerHTML = ""; };
 }
 
 function render(){
   stopCamera();
   editIdx = null;
   const st = S.step;
+  document.getElementById("modal").innerHTML = "";
+  const top = document.getElementById("topR");
+  top.innerHTML = (st==="arrive"||st==="depart") ? '<button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button>' : "";
+  if(top.firstChild){
+    document.getElementById("kiko").onclick = ()=>openKiko("帰庫");
+    document.getElementById("kiko2").onclick = ()=>openKiko("違法帰庫");
+  }
   metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
   let h = "";
   if(st==="home"){
@@ -256,20 +288,16 @@ function render(){
   }else if(st==="odoStart"){
     h = `<div class="panel"><p class="msg">乗務を開始してください</p>
          ${odoInput("開始時Odoメーターを記録してください")}
-         <p class="err" id="err"></p><button id="begin">乗務開始</button></div>`;
+         <p class="err" id="err"></p><p class="status" id="status"></p><button id="begin">乗務開始</button></div>`;
   }else if(st==="arrive"){
     h = `<div class="panel"><p class="msg">Odoメーターを記録する</p>
          ${odoInput("現在のOdoメーター")}
          <p class="err" id="err"></p><p class="status" id="status"></p>
-         <div class="row"><button id="kaiso">回送で到着</button><button id="jissha" class="alt">実車で到着</button></div>
-         <div class="row"><button id="kiko" class="ghost">帰庫する</button><button id="kiko2" class="ghost">違法帰庫</button></div></div>`;
+         <div class="row"><button id="kaiso">回送で到着</button><button id="jissha" class="alt">実車で到着</button></div></div>`;
   }else if(st==="depart"){
     h = `<div class="panel"><p class="msg">次の出発</p>
          <p class="err" id="err"></p><p class="status" id="status"></p>
-         <button id="dep">出発</button>
-         <div class="row"><button id="kiko" class="ghost">帰庫する</button><button id="kiko2" class="ghost">違法帰庫</button></div>
-         <div id="kikoBox" hidden>${odoInput("帰庫時のOdoメーター")}
-           <button id="kikoGo" class="alt"></button></div></div>`;
+         <button id="dep">出発</button></div>`;
   }else if(st==="done"){
     h = `<div class="panel"><p class="msg">帰庫しました</p>
          <p class="note">運転記録(CSV)を保存または共有してください。</p>
@@ -285,7 +313,7 @@ function render(){
 }
 const EDITABLE = ["業務開始","日常点検","出発点呼","乗務開始","出発","回送で到着","実車で到着","帰庫"];
 const HAS_ODO = ["乗務開始","回送で到着","実車で到着","帰庫"];
-const HAS_PLACE = ["出発","回送で到着","実車で到着","帰庫"];
+const HAS_PLACE = ["乗務開始","出発","回送で到着","実車で到着","帰庫"];
 let editIdx = null;
 const escH = v => String(v??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -378,21 +406,13 @@ function bind(st){
     view.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>chooseManager(Number(b.dataset.m)));
     startScan();
   }
-  if(st==="odoStart") $("begin").onclick = ()=>{ const o=readOdo(); if(o===null) return; addRow("乗務開始",{odo:o}); go("arrive"); };
+  if(st==="odoStart") $("begin").onclick = place("乗務開始");
   if(st==="arrive"){
-    $("kiko2").onclick = place("違法帰庫");
     $("kaiso").onclick = place("回送で到着");
     $("jissha").onclick = place("実車で到着");
-    $("kiko").onclick = place("帰庫");
   }
-  if(st==="depart"){
-    $("dep").onclick = place("出発");
-    let pend = "帰庫";
-    const open = k => { pend = k; $("kikoGo").textContent = k+"を記録"; $("kikoBox").hidden = false; $("odo").focus(); };
-    $("kiko").onclick = ()=>open("帰庫");
-    $("kiko2").onclick = ()=>open("違法帰庫");
-    $("kikoGo").onclick = ()=>place(pend)();
-  }
+  if(st==="depart") $("dep").onclick = place("出発");
+
   if(st==="done"){
     $("dl").onclick = download; $("sh").onclick = share;
     $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
