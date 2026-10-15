@@ -302,11 +302,12 @@ function place(kind, ids){
 const CHECK_ITEMS = ["エンジン（かかり具合・異音）","ブレーキ（踏みしろ・きき具合）","パーキングブレーキ（ひきしろ）",
   "ワイパー（消耗具合）","ウインドウォッシャー液","方向指示器","ブレーキオイル","ラジエーター・ファンベルト",
   "エンジンオイル・バッテリー","ライト類","タイヤ（空気圧・消耗・溝）","スペアタイヤ","非常信号用具","車検証"];
-function openCheck(){
+const POST_ITEMS = ["車両の異常","交通事故","忘れ物等","体調の異常"];
+function openCheck(title="点検表", items=CHECK_ITEMS){
   const m = document.getElementById("modal");
   m.innerHTML = `<div class="mback"><div class="panel mpanel" role="dialog" aria-modal="true" style="max-height:92dvh;overflow:auto">
-    <p class="msg">点検表</p>
-    <table class="ck">${CHECK_ITEMS.map(t=>`<tr><td>${t}</td><td><button class="okb">異常なし</button></td></tr>`).join("")}</table>
+    <p class="msg">${title}</p>
+    <table class="ck">${items.map(t=>`<tr><td>${t}</td><td><button class="okb">異常なし</button></td></tr>`).join("")}</table>
     <button id="ck-close" class="ghost">閉じる</button></div></div>`;
   m.querySelectorAll(".okb").forEach(b=>b.onclick=()=>{
     const on = b.classList.toggle("on"); b.textContent = on ? "✓ 異常なし" : "異常なし"; });
@@ -404,8 +405,9 @@ function render(){
          <button id="fuelGo">記録する</button>
          <button id="fuelBack" class="ghost">戻る</button></div>`;
   }else if(st==="done"){
-    h = `<div class="panel"><p class="msg">帰庫しました</p>
-         <p class="note">運転記録(CSV)を保存または共有してください。</p>
+    h = `<div class="panel"><p class="msg">お疲れ様でした。終業後点検を実施してください</p>
+         <button id="post" class="alt">終業後点検</button>
+         <p class="note" style="margin-top:16px">帰庫を記録しました。運転記録(CSV)を保存または共有してください。</p>
          ${S.rows.some(r=>r.lat && !r.addr) ? `<p class="err">住所が未取得の行があります。通信が戻ると自動で補完されます。緯度経度は記録済みです。</p>` : ""}
          <pre>${csvText().replace(/&/g,"&amp;").replace(/</g,"&lt;")}</pre>
          <button id="dl">CSVをダウンロード</button>
@@ -635,7 +637,7 @@ function bind(st){
   if(st==="home") $("start").onclick = ()=>{ addRow("業務開始"); go("inspect"); };
   if(st==="inspect"){
     $("ok").onclick = ()=>{ addRow("日常点検", {note:"異常なし"}); go("scan"); };
-    $("chk").onclick = openCheck;
+    $("chk").onclick = ()=>openCheck();
   }
   if(st==="scan"){
     view.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>chooseManager(b.dataset.m));
@@ -653,6 +655,7 @@ function bind(st){
   }
 
   if(st==="done"){
+    $("post").onclick = ()=>openCheck("終業後点検", POST_ITEMS);
     $("dl").onclick = download; $("sh").onclick = share;
     $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
   }
