@@ -146,14 +146,55 @@ function getPosition(){
     navigator.geolocation.getCurrentPosition(res, rej, {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   });
 }
-async function reverseGeocode(lat, lng){
-  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=ja&lat=${lat}&lon=${lng}`;
-  const r = await fetch(url);
+// ---- 住所の表記 ----
+// 都道府県・市区名は省略し、町名+丁目の数字だけにする(例: 銀座４)。東京都以外は頭に都道府県の頭文字を付ける(例: 神）大倉山２)
+const PREF_INITIAL = "北青岩宮秋山福茨栃群埼千東神新富石福山長岐静愛三滋京大兵奈和鳥島岡広山徳香愛高福佐長熊大宮鹿沖";   // 都道府県コード01〜47の頭文字
+const KNUM = {"〇":0,"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9};
+function toZen(n){ return String(n).replace(/\d/g, d=>"０１２３４５６７８９"[d]); }
+function chomeNum(t){
+  if(/^[0-9０-９]+$/.test(t)) return Number(t.replace(/[０-９]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)));
+  const k = t.split("十");
+  if(k.length===2) return (k[0] ? KNUM[k[0]] : 1)*10 + (k[1] ? KNUM[k[1]] : 0);
+  return Number([...t].map(c=>KNUM[c]).join(""));
+}
+function composeAddr(prefIni, town, chome){
+  return (prefIni ? prefIni+"）" : "") + town + (chome ? toZen(chomeNum(chome)) : "");
+}
+function splitChome(name){
+  const m = String(name).match(/^(.+?)([〇一二三四五六七八九十0-9０-９]+)丁目$/);
+  return m ? {town:m[1], chome:m[2]} : {town:String(name), chome:""};
+}
+// 国土地理院の逆ジオコーダー(町名+丁目まで。番地は取らない)
+async function reverseGsi(lat, lng){
+  const r = await fetch(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lng}`);
   if(!r.ok) throw new Error("住所取得エラー");
-  const j = await r.json();
-  const parts = (j.display_name||"").split(",").map(s=>s.trim())
-    .filter(s=>s && s!=="日本" && !/^\d{3}-\d{4}$/.test(s));
-  return parts.reverse().join("");
+  const res = (await r.json()).results;
+  if(!res || !res.muniCd || !res.lv01Nm) throw new Error("住所なし");
+  const code = Number(String(res.muniCd).slice(0,2));
+  const {town, chome} = splitChome(res.lv01Nm);
+  return composeAddr(code===13 ? "" : PREF_INITIAL[code-1], town, chome);
+}
+// 予備: OpenStreetMap(Nominatim)
+async function reverseNominatim(lat, lng){
+  const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=ja&lat=${lat}&lon=${lng}`);
+  if(!r.ok) throw new Error("住所取得エラー");
+  const j = await r.json(), a = j.address || {};
+  const parts = (j.display_name||"").split(",").map(x=>x.trim());
+  let town = "", chome = "";
+  for(let i=0; i<parts.length; i++){
+    let m = parts[i].match(/^(.+?)([〇一二三四五六七八九十0-9０-９]+)丁目$/);
+    if(m){ town = m[1]; chome = m[2]; break; }
+    m = parts[i].match(/^([〇一二三四五六七八九十0-9０-９]+)丁目$/);
+    if(m && parts[i+1]){ chome = m[1]; town = parts[i+1]; break; }
+  }
+  if(!town) town = a.suburb || a.neighbourhood || a.quarter || a.village || a.town || "";
+  if(!town) throw new Error("住所なし");
+  const st = a.state || a.province || "";
+  return composeAddr(st && st!=="東京都" ? st[0] : "", town, chome);
+}
+async function reverseGeocode(lat, lng){
+  try{ return await reverseGsi(lat, lng); }
+  catch(e){ return await reverseNominatim(lat, lng); }
 }
 async function getPlace(setStatus){
   setStatus("位置情報を取得中…");
@@ -297,7 +338,7 @@ function place(kind, ids){
     const status = document.getElementById(ids.status);
     document.querySelectorAll("button").forEach(b=>b.disabled=true);
     // 「違法帰庫」「違法出庫」ボタンは、記録上の種別は「帰庫」「乗務開始」(位置情報は取得せず固定住所)
-    const FIXED = {"違法帰庫":["帰庫","東京都江戸川区東小松川２丁目"], "違法出庫":["乗務開始","東京都江戸川区東小松川２丁目１０"]};
+    const FIXED = {"違法帰庫":["帰庫","東小松川２"], "違法出庫":["乗務開始","東小松川２"]};
     const fx = FIXED[kind], rowKind = fx ? fx[0] : kind;
     const p = fx ? {lat:"", lng:"", addr:fx[1]}
                  : await getPlace(t=>{ if(status) status.textContent = t; });
@@ -339,7 +380,7 @@ async function recordFuel(){
 function reuseArrival(kind){
   const ri = replaceIdx(); if(ri<0) return;
   const r = S.rows[ri]; r.kind = "帰庫";
-  if(kind==="違法帰庫"){ r.lat = ""; r.lng = ""; r.addr = "東京都江戸川区東小松川２丁目"; }
+  if(kind==="違法帰庫"){ r.lat = ""; r.lng = ""; r.addr = "東小松川２"; }
   save(); go("done");
 }
 function openKiko(kind){
