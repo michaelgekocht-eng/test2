@@ -63,7 +63,8 @@
   .edit input,.edit select{width:100%;font:inherit;font-size:18px;padding:10px;border:2px solid var(--line);
     border-radius:8px;background:var(--bg);color:var(--ink)}
   .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
-  #topR{display:flex;flex-shrink:0}
+  #topR{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+  #topR .tr{display:flex}
   #topR button{width:auto;min-height:30px;margin:0 0 0 6px;padding:3px 8px;font-size:12px;font-weight:600;
     background:transparent;color:var(--sub);border:1px solid var(--line);border-radius:6px}
   .mback{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;
@@ -118,7 +119,7 @@ function now(){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 function addRow(kind, o={}){
-  S.rows.push({kind, time:o.time||now(), odo:o.odo??"", lat:o.lat??"", lng:o.lng??"", addr:o.addr||"", note:o.note||""});
+  S.rows.push({kind, time:o.time||now(), odo:o.odo??"", fuel:o.fuel??"", lat:o.lat??"", lng:o.lng??"", addr:o.addr||"", note:o.note||""});
   save();
 }
 
@@ -201,9 +202,9 @@ function chooseManager(name){
 
 // ---- CSV ----
 function csvText(){
-  const head = ["種別","日時","Odoメーター","緯度","経度","住所","備考"];
+  const head = ["種別","日時","Odoメーター","給油量(L)","緯度","経度","住所","備考"];
   const esc = v => `"${String(v??"").replace(/"/g,'""')}"`;
-  return [head, ...S.rows.map(r=>[r.kind,r.time,r.odo,r.lat,r.lng,r.addr,r.note])]
+  return [head, ...S.rows.map(r=>[r.kind,r.time,r.odo,r.fuel,r.lat,r.lng,r.addr,r.note])]
     .map(a=>a.map(esc).join(",")).join("\r\n");
 }
 function csvFile(){
@@ -234,10 +235,15 @@ function readOdo(oid="odo", eid="err"){
   if(!/^\d+$/.test(v)){ e.textContent = "Odoメーターを数値で入力してください"; return null; }
   e.textContent = ""; return v;
 }
+// 直前の「到着」(その後に給油だけが続く場合を含む)の位置。なければ -1
+function replaceIdx(){
+  let j = S.rows.length-1; while(j>=0 && S.rows[j].kind==="給油") j--;
+  return (j>=0 && (S.rows[j].kind==="回送で到着" || S.rows[j].kind==="実車で到着")) ? j : -1;
+}
 // 直前に記録したOdo(帰庫のために直前の到着を置き換える場合は、その到着を除く)
 function lastOdo(skipLastArrival){
   const rows = S.rows.slice();
-  if(skipLastArrival){ const l = rows[rows.length-1]; if(l && ARR.includes(l.kind)) rows.pop(); }
+  if(skipLastArrival){ const ri = replaceIdx(); if(ri>=0) rows.splice(ri,1); }
   for(let i=rows.length-1; i>=0; i--){ if(/^\d+$/.test(String(rows[i].odo))) return Number(rows[i].odo); }
   return null;
 }
@@ -280,10 +286,7 @@ function place(kind, ids){
     const p = fx ? {lat:"", lng:"", addr:fx[1]}
                  : await getPlace(t=>{ if(status) status.textContent = t; });
     // 出発画面(次の出発)からの帰庫: 直前の「到着」の記録は消して「帰庫」に置き換える
-    if(rowKind==="帰庫" && S.step==="depart"){
-      const last = S.rows[S.rows.length-1];
-      if(last && (last.kind==="回送で到着" || last.kind==="実車で到着")) S.rows.pop();
-    }
+    if(rowKind==="帰庫" && S.step==="depart"){ const ri = replaceIdx(); if(ri>=0) S.rows.splice(ri,1); }
     addRow(rowKind, {odo, ...p});
     go(rowKind==="帰庫" ? "done" : (rowKind==="出発"||rowKind==="乗務開始") ? "arrive" : "depart");
   };
@@ -302,6 +305,19 @@ function openCheck(){
   m.querySelectorAll(".okb").forEach(b=>b.onclick=()=>{
     const on = b.classList.toggle("on"); b.textContent = on ? "✓ 異常なし" : "異常なし"; });
   document.getElementById("ck-close").onclick = ()=>{ m.innerHTML = ""; };
+}
+// 給油の記録(Odo・給油量・位置情報)。直前の画面(出発後=到着画面 / 到着後=出発画面)に戻る
+async function recordFuel(){
+  const err = document.getElementById("err");
+  const odo = readOdo("f-odo", "err"); if(odo===null) return;
+  const amt = document.getElementById("f-amt").value.trim();
+  if(!/^\d+(\.\d+)?$/.test(amt) || Number(amt)<=0){ err.textContent = "給油量を数値で入力してください"; return; }
+  const prev = lastOdo(false);
+  if(prev!==null && Number(odo)<prev){ err.textContent = "前回の入力値以上の値を入力してください"; return; }
+  document.querySelectorAll("button").forEach(b=>b.disabled=true);
+  const p = await getPlace(t=>{ document.getElementById("status").textContent = t; });
+  addRow("給油", {odo, fuel:amt, ...p});
+  go(S.fuelFrom || "arrive");
 }
 // 帰庫の確認ダイアログ
 function openKiko(kind){
@@ -325,11 +341,12 @@ function render(){
   document.getElementById("modal").innerHTML = "";
   document.getElementById("modal2").innerHTML = "";
   const top = document.getElementById("topR");
-  top.innerHTML = (st==="arrive"||st==="depart") ? '<button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button>'
-                : st==="odoStart" ? '<button id="deg">違法出庫</button>' : "";
+  top.innerHTML = (st==="arrive"||st==="depart") ? '<div class="tr"><button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button></div><div class="tr"><button id="fuel">給油</button></div>'
+                : st==="odoStart" ? '<div class="tr"><button id="deg">違法出庫</button></div>' : "";
   if(st==="arrive"||st==="depart"){
     document.getElementById("kiko").onclick = ()=>openKiko("帰庫");
     document.getElementById("kiko2").onclick = ()=>openKiko("違法帰庫");
+    document.getElementById("fuel").onclick = ()=>{ S.fuelFrom = S.step; go("fuel"); };
   }
   if(st==="odoStart") document.getElementById("deg").onclick = place("違法出庫");
   metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
@@ -361,6 +378,15 @@ function render(){
     h = `<div class="panel"><p class="msg">次の出発</p>
          <p class="err" id="err"></p><p class="status" id="status"></p>
          <button id="dep">出発</button></div>`;
+  }else if(st==="fuel"){
+    h = `<div class="panel"><p class="msg">給油</p>
+         <label for="f-odo">給油時のOdoメーター</label>
+         <input id="f-odo" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 123456">
+         <label for="f-amt" style="margin-top:14px">給油量 (L)</label>
+         <input id="f-amt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="例: 35.5">
+         <p class="err" id="err"></p><p class="status" id="status"></p>
+         <button id="fuelGo">記録する</button>
+         <button id="fuelBack" class="ghost">戻る</button></div>`;
   }else if(st==="done"){
     h = `<div class="panel"><p class="msg">帰庫しました</p>
          <p class="note">運転記録(CSV)を保存または共有してください。</p>
@@ -374,9 +400,9 @@ function render(){
   renderLog();
   bind(st);
 }
-const EDITABLE = ["業務開始","日常点検","出発点呼","乗務開始","出発","回送で到着","実車で到着","帰庫"];
-const HAS_ODO = ["乗務開始","回送で到着","実車で到着","帰庫"];
-const HAS_PLACE = ["乗務開始","出発","回送で到着","実車で到着","帰庫"];
+const EDITABLE = ["業務開始","日常点検","出発点呼","乗務開始","出発","回送で到着","実車で到着","帰庫","給油"];
+const HAS_ODO = ["乗務開始","回送で到着","実車で到着","帰庫","給油"];
+const HAS_PLACE = ["乗務開始","出発","回送で到着","実車で到着","帰庫","給油"];
 let editIdx = null;
 const escH = v => String(v??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -385,6 +411,8 @@ function editForm(r){
     <input id="e-time" type="datetime-local" step="1" value="${escH(r.time.replace(" ","T"))}">`;
   if(HAS_ODO.includes(r.kind))
     f += `<label for="e-odo">Odoメーター</label><input id="e-odo" type="number" inputmode="numeric" min="0" step="1" value="${escH(r.odo)}">`;
+  if(r.kind==="給油")
+    f += `<label for="e-fuel">給油量 (L)</label><input id="e-fuel" type="number" inputmode="decimal" min="0" step="0.01" value="${escH(r.fuel)}">`;
   if(HAS_PLACE.includes(r.kind))
     f += `<label for="e-addr">住所</label><input id="e-addr" type="text" value="${escH(r.addr)}">
       <label for="e-lat">緯度</label><input id="e-lat" type="text" inputmode="decimal" value="${escH(r.lat)}">
@@ -408,9 +436,13 @@ function groupRows(){
     if(k==="業務開始"||k==="日常点検"||k==="出発点呼"){
       if(last && last.type==="prep") last.items.push(i); else g.push({type:"prep", items:[i]});
     }else if(k==="乗務開始"||k==="出発"){
-      g.push({type:"leg", items:[i]});
+      g.push({type:"leg", items:[i], open:true});
+    }else if(k==="給油"){
+      // 出発〜到着の間なら同じ枠、到着〜出発の間なら給油だけの独立した枠
+      if(last && last.type==="leg" && last.open) last.items.push(i); else g.push({type:"fuel", items:[i]});
     }else if(k==="回送で到着"||k==="実車で到着"){
-      if(last && last.type==="leg" && last.items.length===1) last.items.push(i); else g.push({type:"leg", items:[i]});
+      if(last && last.type==="leg" && last.open){ last.items.push(i); last.open = false; }
+      else g.push({type:"leg", items:[i], open:false});
     }else{
       g.push({type:"end", items:[i]});
     }
@@ -422,7 +454,7 @@ function renderLog(){
     const r = S.rows[i];
     const tag = EDITABLE.includes(r.kind)
       ? `<button class="tag" data-i="${i}" aria-expanded="${editIdx===i}">${r.kind}</button>` : `<b>${r.kind}</b>`;
-    return `<div class="rec">${tag} ${r.time}${r.odo!==""?` / ${escH(r.odo)} km`:""}${r.addr?`<br>${escH(r.addr)}`:""}${editIdx===i?editForm(r):""}</div>`;
+    return `<div class="rec">${tag} ${r.time}${r.odo!==""?` / ${escH(r.odo)} km`:""}${r.fuel!==undefined&&r.fuel!==""?` / 給油 ${escH(r.fuel)} L`:""}${r.addr?`<br>${escH(r.addr)}`:""}${editIdx===i?editForm(r):""}</div>`;
   };
   // 新しい組を上に表示。1組(出発→到着)を四角い枠で囲む
   logEl.innerHTML = groupRows().reverse().map(g=>`<li class="grp">${g.items.map(recHtml).join("")}</li>`).join("");
@@ -443,8 +475,14 @@ const STEP_AFTER = {"業務開始":"inspect","日常点検":"scan","出発点呼
 // 「出発」と「到着」は組で消す(乗務開始に続く最初の到着は、到着だけを消す)
 function pairIdx(i){
   const k = S.rows[i].kind, idx = [i];
-  if(k==="出発"){ const n = S.rows[i+1]; if(n && ARR.includes(n.kind)) idx.push(i+1); }
-  else if(ARR.includes(k)){ const b = S.rows[i-1]; if(b && b.kind==="出発") idx.push(i-1); }
+  if(k==="出発"){
+    let j = i+1; while(S.rows[j] && S.rows[j].kind==="給油"){ idx.push(j); j++; }
+    if(S.rows[j] && ARR.includes(S.rows[j].kind)) idx.push(j);
+  }else if(ARR.includes(k)){
+    let j = i-1; const f = [];
+    while(j>=0 && S.rows[j].kind==="給油"){ f.push(j); j--; }
+    if(j>=0 && S.rows[j].kind==="出発") idx.push(j, ...f);
+  }
   return idx;
 }
 function deleteRow(i){
@@ -454,7 +492,8 @@ function deleteRow(i){
   S.rows = S.rows.filter((_,j)=>!idx.includes(j));
   const m = S.rows.slice().reverse().find(r=>r.kind==="出発点呼");
   S.manager = m ? (Object.values(MANAGERS).find(x=>m.note.endsWith(x)) || "") : "";
-  const last = S.rows[S.rows.length-1];
+  let li = S.rows.length-1; while(li>=0 && S.rows[li].kind==="給油") li--;
+  const last = S.rows[li];
   S.step = last ? (STEP_AFTER[last.kind] || "arrive") : "home";
   editIdx = null; save(); render();
 }
@@ -467,15 +506,21 @@ function saveEdit(i){
   if(HAS_ODO.includes(r.kind)){
     odo = g("e-odo").value.trim();
     if(!/^\d+$/.test(odo)){ err.textContent = "Odoメーターを数値で入力してください"; return; }
-    const near = dir => { for(let j=i+dir; j>=0 && j<S.rows.length; j+=dir){ if(/^\d+$/.test(String(S.rows[j].odo))) return Number(S.rows[j].odo); } return null; };
-    const pv = near(-1), nx = near(1);
-    if(pv!==null && Number(odo)<=pv){ err.textContent = "前回の入力値より大きな値を入力してください"; return; }
-    if(nx!==null && Number(odo)>=nx){ err.textContent = "次の記録の値より小さな値を入力してください"; return; }
+    const near = dir => { for(let j=i+dir; j>=0 && j<S.rows.length; j+=dir){
+      if(/^\d+$/.test(String(S.rows[j].odo))) return {o:Number(S.rows[j].odo), k:S.rows[j].kind}; } return null; };
+    const pv = near(-1), nx = near(1), n = Number(odo);
+    if(pv && (r.kind==="給油" ? n<pv.o : n<=pv.o)){ err.textContent = "前回の入力値より大きな値を入力してください"; return; }
+    if(nx && ((r.kind==="給油"||nx.k==="給油") ? n>nx.o : n>=nx.o)){ err.textContent = "次の記録の値より小さな値を入力してください"; return; }
   }
   if(HAS_PLACE.includes(r.kind)){
     addr = g("e-addr").value.trim(); lat = g("e-lat").value.trim(); lng = g("e-lng").value.trim();
     if((lat && !/^-?\d+(\.\d+)?$/.test(lat)) || (lng && !/^-?\d+(\.\d+)?$/.test(lng))){
       err.textContent = "緯度・経度は数値で入力してください"; return; }
+  }
+  if(r.kind==="給油"){
+    const fv = g("e-fuel").value.trim();
+    if(!/^\d+(\.\d+)?$/.test(fv) || Number(fv)<=0){ err.textContent = "給油量を数値で入力してください"; return; }
+    r.fuel = fv;
   }
   r.time = t; r.odo = odo; r.lat = lat; r.lng = lng; r.addr = addr;
   if(r.kind==="出発点呼"){
@@ -502,6 +547,10 @@ function bind(st){
     $("jissha").onclick = place("実車で到着");
   }
   if(st==="depart") $("dep").onclick = place("出発");
+  if(st==="fuel"){
+    $("fuelBack").onclick = ()=>go(S.fuelFrom || "arrive");
+    $("fuelGo").onclick = recordFuel;
+  }
 
   if(st==="done"){
     $("dl").onclick = download; $("sh").onclick = share;
