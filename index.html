@@ -116,9 +116,12 @@ const metaEl = document.getElementById("meta");
 // step: home | inspect | scan | odoStart | arrive | depart | done
 let S = load() || fresh();
 S.rows.forEach(r=>{ if(r.kind==="違法帰庫") r.kind = "帰庫"; });
-function fresh(){ return {step:"home", rows:[], manager:""}; }
+function fresh(){ return {step:"home", rows:[], manager:"", vehicle:""}; }
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; } }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+function updateMeta(){
+  metaEl.textContent = [S.vehicle ? `車両: ${S.vehicle}` : "", S.manager ? `点呼者: ${S.manager}` : ""].filter(Boolean).join(" / ");
+}
 function go(step){ S.step = step; save(); render(); }
 
 const pad = n => String(n).padStart(2,"0");
@@ -210,9 +213,9 @@ function chooseManager(name){
 
 // ---- CSV ----
 function csvText(){
-  const head = ["種別","日時","Odoメーター","給油量(L)","緯度","経度","住所","備考"];
+  const head = ["種別","日時","車両番号","Odoメーター","給油量(L)","緯度","経度","住所","備考"];
   const esc = v => `"${String(v??"").replace(/"/g,'""')}"`;
-  return [head, ...S.rows.map(r=>[r.kind,r.time,r.odo,r.fuel,r.lat,r.lng,r.addr,r.note])]
+  return [head, ...S.rows.map(r=>[r.kind,r.time,S.vehicle||"",r.odo,r.fuel,r.lat,r.lng,r.addr,r.note])]
     .map(a=>a.map(esc).join(",")).join("\r\n");
 }
 function csvFile(){
@@ -368,11 +371,12 @@ function render(){
   }
   if(st==="odoStart") document.getElementById("deg").onclick = place("違法出庫");
   if(st==="done") document.getElementById("dl").onclick = download;
-  metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
+  updateMeta();
   let h = "";
   if(st==="home"){
-    h = `<div class="panel"><p class="note">乗務前にボタンを押してください。</p>
-         <button id="start">業務を開始する</button></div>`;
+    h = `<div class="panel"><label for="veh" style="font-size:20px">本日の担当車の番号を入力してください</label>
+         <input id="veh" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 12" value="${escH(S.vehicle||"")}">
+         <button id="start" disabled>業務を開始する</button></div>`;
   }else if(st==="inspect"){
     h = `<div class="panel"><p class="msg">日常点検をしてください</p>
          <button id="ok">異常なし</button>
@@ -435,6 +439,8 @@ function editForm(r){
     f += `<label for="e-addr">住所</label><input id="e-addr" type="text" value="${escH(r.addr)}">
       <label for="e-lat">緯度</label><input id="e-lat" type="text" inputmode="decimal" value="${escH(r.lat)}">
       <label for="e-lng">経度</label><input id="e-lng" type="text" inputmode="decimal" value="${escH(r.lng)}">`;
+  if(r.kind==="業務開始")
+    f += `<label for="e-veh">担当車の番号</label><input id="e-veh" type="number" inputmode="numeric" min="0" step="1" value="${escH(S.vehicle||"")}">`;
   if(r.kind==="出発点呼"){
     const cur = Object.values(MANAGERS).find(m=>r.note.endsWith(m)) || "";
     f += `<label for="e-mgr">運行管理者・整備管理者(補助者)</label><select id="e-mgr">
@@ -624,17 +630,27 @@ function saveEdit(i){
     if(!/^\d+(\.\d+)?$/.test(fv) || Number(fv)<=0){ err.textContent = "給油量を数値で入力してください"; return; }
     r.fuel = fv;
   }
+  if(r.kind==="業務開始"){
+    const vv = g("e-veh").value.trim();
+    if(!/^\d+$/.test(vv)){ err.textContent = "担当車の番号を数値で入力してください"; return; }
+    S.vehicle = vv;
+  }
   r.time = t; r.odo = odo; r.lat = lat; r.lng = lng; r.addr = addr;
   if(r.kind==="出発点呼"){
     const m = g("e-mgr").value; r.note = `運行管理者・整備管理者(補助者): ${m}`; S.manager = m;
   }else{ r.note = g("e-note").value.trim(); }
   editIdx = null; save();
-  metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
+  updateMeta();
   if(S.step==="done") render(); else renderLog();
 }
 const $ = id => document.getElementById(id);
 function bind(st){
-  if(st==="home") $("start").onclick = ()=>{ addRow("業務開始"); go("inspect"); };
+  if(st==="home"){
+    const veh = $("veh"), btn = $("start");
+    const upd = ()=>{ btn.disabled = !/^\d+$/.test(veh.value.trim()); };   // 未入力の間は押せない
+    veh.oninput = upd; upd();
+    btn.onclick = ()=>{ if(btn.disabled) return; S.vehicle = veh.value.trim(); addRow("業務開始"); go("inspect"); };
+  }
   if(st==="inspect"){
     $("ok").onclick = ()=>{ addRow("日常点検", {note:"異常なし"}); go("scan"); };
     $("chk").onclick = ()=>openCheck();
