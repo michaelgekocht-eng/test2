@@ -359,13 +359,15 @@ function render(){
   document.getElementById("modal2").innerHTML = "";
   const top = document.getElementById("topR");
   top.innerHTML = (st==="arrive"||st==="depart") ? '<div class="tr"><button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button></div><div class="tr"><button id="fuel">給油</button></div>'
-                : st==="odoStart" ? '<div class="tr"><button id="deg">違法出庫</button></div>' : "";
+                : st==="odoStart" ? '<div class="tr"><button id="deg">違法出庫</button></div>'
+                : st==="done" ? '<div class="tr"><button id="dl">CSVをダウンロード</button></div>' : "";
   if(st==="arrive"||st==="depart"){
     document.getElementById("kiko").onclick = ()=>openKiko("帰庫");
     document.getElementById("kiko2").onclick = ()=>openKiko("違法帰庫");
     document.getElementById("fuel").onclick = ()=>{ S.fuelFrom = S.step; go("fuel"); };
   }
   if(st==="odoStart") document.getElementById("deg").onclick = place("違法出庫");
+  if(st==="done") document.getElementById("dl").onclick = download;
   metaEl.textContent = S.manager ? `点呼者: ${S.manager}` : "";
   let h = "";
   if(st==="home"){
@@ -407,11 +409,9 @@ function render(){
   }else if(st==="done"){
     h = `<div class="panel"><p class="msg">お疲れ様でした。終業後点検を実施してください</p>
          <button id="post" class="alt">終業後点検</button>
-         <p class="note" style="margin-top:16px">帰庫を記録しました。運転記録(CSV)を保存または共有してください。</p>
+         <p class="note" style="margin-top:16px">今日のデータを運行管理者に共有してください</p>
          ${S.rows.some(r=>r.lat && !r.addr) ? `<p class="err">住所が未取得の行があります。通信が戻ると自動で補完されます。緯度経度は記録済みです。</p>` : ""}
-         <pre>${csvText().replace(/&/g,"&amp;").replace(/</g,"&lt;")}</pre>
-         <button id="dl">CSVをダウンロード</button>
-         <button id="sh" class="alt">共有</button>
+         <button id="sh">共有</button>
          <button id="reset" class="ghost">新しい日報を始める</button></div>`;
   }
   view.innerHTML = h;
@@ -656,7 +656,7 @@ function bind(st){
 
   if(st==="done"){
     $("post").onclick = ()=>openCheck("終業後点検", POST_ITEMS);
-    $("dl").onclick = download; $("sh").onclick = share;
+    $("sh").onclick = share;
     $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
   }
 }
