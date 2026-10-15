@@ -68,6 +68,12 @@
     background:transparent;color:var(--sub);border:1px solid var(--line);border-radius:6px}
   .mback{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;
     padding:16px;z-index:10;overflow:auto}
+  .ck{width:100%;border-collapse:collapse;font-size:16px;margin-bottom:8px}
+  .ck td{padding:8px 4px;border-bottom:1px solid var(--line)}
+  .ck td:last-child{text-align:right;white-space:nowrap}
+  .ck button.okb{width:auto;min-height:44px;margin:0;padding:6px 12px;font-size:15px;font-weight:600;
+    background:transparent;color:var(--ink);border:2px solid var(--line)}
+  .ck button.okb.on{background:var(--go);color:var(--go-ink);border-color:var(--go)}
   #modal2 .mback{z-index:20}
   .mpanel{width:100%;max-width:480px;margin:0}
   .edit .del{width:auto;min-height:44px;margin-top:28px;padding:8px 4px;font-size:14px;font-weight:400;
@@ -283,6 +289,20 @@ function place(kind, ids){
   };
   return ()=>run(false);
 }
+// 点検表(日常点検の記録とは連動しない、項目一覧のみ。チェックは画面上の目印で、保存もしない)
+const CHECK_ITEMS = ["エンジン（かかり具合・異音）","ブレーキ（踏みしろ・きき具合）","パーキングブレーキ（ひきしろ）",
+  "ワイパー（消耗具合）","ウインドウォッシャー液","方向指示器","ブレーキオイル","ラジエーター・ファンベルト",
+  "エンジンオイル・バッテリー","ライト類","タイヤ（空気圧・消耗・溝）","スペアタイヤ","非常信号用具","車検証"];
+function openCheck(){
+  const m = document.getElementById("modal");
+  m.innerHTML = `<div class="mback"><div class="panel mpanel" role="dialog" aria-modal="true" style="max-height:92dvh;overflow:auto">
+    <p class="msg">点検表</p>
+    <table class="ck">${CHECK_ITEMS.map(t=>`<tr><td>${t}</td><td><button class="okb">異常なし</button></td></tr>`).join("")}</table>
+    <button id="ck-close" class="ghost">閉じる</button></div></div>`;
+  m.querySelectorAll(".okb").forEach(b=>b.onclick=()=>{
+    const on = b.classList.toggle("on"); b.textContent = on ? "✓ 異常なし" : "異常なし"; });
+  document.getElementById("ck-close").onclick = ()=>{ m.innerHTML = ""; };
+}
 // 帰庫の確認ダイアログ
 function openKiko(kind){
   const cur = document.getElementById("odo");
@@ -319,7 +339,8 @@ function render(){
          <button id="start">業務を開始する</button></div>`;
   }else if(st==="inspect"){
     h = `<div class="panel"><p class="msg">日常点検をしてください</p>
-         <button id="ok">異常なし</button></div>`;
+         <button id="ok">異常なし</button>
+         <button id="chk" class="ghost">点検表</button></div>`;
   }else if(st==="scan"){
     h = `<div class="panel"><p class="msg">点呼を受けてください</p>
          <p class="note">運行管理者・整備管理者(補助者)のQRコードを読み取ってください。</p>
@@ -467,7 +488,10 @@ function saveEdit(i){
 const $ = id => document.getElementById(id);
 function bind(st){
   if(st==="home") $("start").onclick = ()=>{ addRow("業務開始"); go("inspect"); };
-  if(st==="inspect") $("ok").onclick = ()=>{ addRow("日常点検", {note:"異常なし"}); go("scan"); };
+  if(st==="inspect"){
+    $("ok").onclick = ()=>{ addRow("日常点検", {note:"異常なし"}); go("scan"); };
+    $("chk").onclick = openCheck;
+  }
   if(st==="scan"){
     view.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>chooseManager(b.dataset.m));
     startScan();
