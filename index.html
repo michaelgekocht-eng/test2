@@ -274,7 +274,7 @@ function place(kind, ids){
     if(kind!=="出発"){
       odo = readOdo(ids.odo, ids.err);
       if(odo===null) return;
-      const prev = lastOdo(kind.includes("帰庫") && S.step==="depart");
+      const prev = lastOdo(false);
       if(prev!==null){
         const d = Number(odo) - prev;
         if(d<=0){ document.getElementById(ids.err).textContent = "前回の入力値より大きな値を入力してください"; return; }
@@ -293,8 +293,6 @@ function place(kind, ids){
     const fx = FIXED[kind], rowKind = fx ? fx[0] : kind;
     const p = fx ? {lat:"", lng:"", addr:fx[1]}
                  : await getPlace(t=>{ if(status) status.textContent = t; });
-    // 出発画面(次の出発)からの帰庫: 直前の「到着」の記録は消して「帰庫」に置き換える
-    if(rowKind==="帰庫" && S.step==="depart"){ const ri = replaceIdx(); if(ri>=0) S.rows.splice(ri,1); }
     addRow(rowKind, {odo, ...p});
     go(rowKind==="帰庫" ? "done" : (rowKind==="出発"||rowKind==="乗務開始") ? "arrive" : "depart");
   };
@@ -328,17 +326,27 @@ async function recordFuel(){
   go(S.fuelFrom || "arrive");
 }
 // 帰庫の確認ダイアログ
+// 直近の「到着」を「帰庫」として流用する(Odoは入力しない)。違法帰庫は住所を固定住所に置き換える
+function reuseArrival(kind){
+  const ri = replaceIdx(); if(ri<0) return;
+  const r = S.rows[ri]; r.kind = "帰庫";
+  if(kind==="違法帰庫"){ r.lat = ""; r.lng = ""; r.addr = "東京都江戸川区東小松川２丁目"; }
+  save(); go("done");
+}
 function openKiko(kind){
+  const reuse = S.step==="depart" && replaceIdx()>=0;   // 到着の後 → 到着の記録を流用
   const cur = document.getElementById("odo");
   document.getElementById("modal").innerHTML = `<div class="mback"><div class="panel mpanel" role="dialog" aria-modal="true">
     <p class="msg">本当に帰庫するの？</p>
     ${kind==="違法帰庫" ? '<p class="note">(違法帰庫: 位置情報は取得せず、固定住所を記録します)</p>' : ""}
-    <label for="m-odo">帰庫時のOdoメーター</label>
-    <input id="m-odo" type="number" inputmode="numeric" min="0" step="1" value="${cur ? escH(cur.value) : ""}">
+    ${reuse ? '<p class="note">直近の「到着」の記録を、帰庫の記録として使います。</p>'
+            : `<label for="m-odo">帰庫時のOdoメーター</label>
+    <input id="m-odo" type="number" inputmode="numeric" min="0" step="1" value="${cur ? escH(cur.value) : ""}">`}
     <p class="err" id="m-err"></p><p class="status" id="m-status"></p>
     <button id="m-yes">疲れたので帰庫します</button>
     <button id="m-no" class="ghost">やっぱりまだ働きます</button></div></div>`;
-  document.getElementById("m-yes").onclick = place(kind, {odo:"m-odo", err:"m-err", status:"m-status"});
+  document.getElementById("m-yes").onclick = reuse ? ()=>reuseArrival(kind)
+                                                   : place(kind, {odo:"m-odo", err:"m-err", status:"m-status"});
   document.getElementById("m-no").onclick = ()=>{ document.getElementById("modal").innerHTML = ""; };
 }
 
@@ -451,6 +459,9 @@ function groupRows(){
     }else if(k==="回送で到着"||k==="実車で到着"){
       if(last && last.type==="leg" && last.open){ last.items.push(i); last.open = false; }
       else g.push({type:"leg", items:[i], open:false});
+    }else if(k==="帰庫"){
+      if(last && last.type==="leg" && last.open){ last.items.push(i); last.open = false; }
+      else g.push({type:"end", items:[i]});
     }else{
       g.push({type:"end", items:[i]});
     }
@@ -470,7 +481,7 @@ function renderLog(){
     out.push(`<li class="grp">${gs[k].items.map(recHtml).join("")}</li>`);
     if(k>0){
       // 枠と枠の間: 移動(出発〜到着)・給油の枠の後ろにだけ、データ挿入用の三角印を出す
-      const prev = gs[k-1], pos = prev.items[prev.items.length-1] + 1, ok = (prev.type==="leg" || prev.type==="fuel");
+      const prev = gs[k-1], pos = prev.items[prev.items.length-1] + 1, ok = (prev.type==="leg" || prev.type==="fuel") && S.rows[pos-1].kind!=="帰庫";
       out.push(ok ? `<li class="gap"><button class="ins" data-pos="${pos}" aria-expanded="${insPos===pos}" aria-label="この位置にデータを挿入"><span class="tri"></span></button>${insPos===pos ? insertPanel(pos) : ""}</li>`
                   : `<li class="gap"></li>`);
     }
