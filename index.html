@@ -68,6 +68,7 @@
     background:transparent;color:var(--sub);border:1px solid var(--line);border-radius:6px}
   .mback{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;
     padding:16px;z-index:10;overflow:auto}
+  #modal2 .mback{z-index:20}
   .mpanel{width:100%;max-width:480px;margin:0}
   .edit .del{width:auto;min-height:44px;margin-top:28px;padding:8px 4px;font-size:14px;font-weight:400;
     background:transparent;color:var(--sub);text-decoration:underline}
@@ -84,11 +85,13 @@
   <ul class="log" id="log"></ul>
 </main>
 <div id="modal"></div>
+<div id="modal2"></div>
 
 <script src="jsQR.js"></script>
 <script>
 "use strict";
-const MANAGERS = {1:"中村", 2:"内田レ", 3:"内田ヒ"};
+// QRコードに入っている名前(登録済みの名前のみ受け付ける。追加するときはここに足す)
+const MANAGERS = ["中村", "内田レ", "内田ヒ"];
 const KEY = "unten-nippo-v1";
 const view = document.getElementById("view");
 const logEl = document.getElementById("log");
@@ -174,8 +177,8 @@ async function startScan(){
       const img = ctx.getImageData(0,0,cv.width,cv.height);
       const code = window.jsQR && jsQR(img.data, img.width, img.height);
       if(code){
-        const v = code.data.trim();
-        if(/^[1-9]\d*$/.test(v) && MANAGERS[Number(v)]){ chooseManager(Number(v)); return; }
+        const v = code.data.trim().normalize("NFKC");
+        if(MANAGERS.includes(v)){ chooseManager(v); return; }
         err.textContent = `「${v}」は登録されていないQRコードです`;
       }
     }
@@ -183,9 +186,9 @@ async function startScan(){
   };
   tick();
 }
-function chooseManager(n){
+function chooseManager(name){
   stopCamera();
-  S.manager = MANAGERS[n];
+  S.manager = name;
   addRow("出発点呼", {note:`運行管理者・整備管理者(補助者): ${S.manager}`});
   go("odoStart");
 }
@@ -225,15 +228,47 @@ function readOdo(oid="odo", eid="err"){
   if(!/^\d+$/.test(v)){ e.textContent = "Odoメーターを数値で入力してください"; return null; }
   e.textContent = ""; return v;
 }
+// 直前に記録したOdo(帰庫のために直前の到着を置き換える場合は、その到着を除く)
+function lastOdo(skipLastArrival){
+  const rows = S.rows.slice();
+  if(skipLastArrival){ const l = rows[rows.length-1]; if(l && ARR.includes(l.kind)) rows.pop(); }
+  for(let i=rows.length-1; i>=0; i--){ if(/^\d+$/.test(String(rows[i].odo))) return Number(rows[i].odo); }
+  return null;
+}
+// Odoの確認ダイアログ(かけ離れている/ほとんど変わらない場合)
+function askOdo(msg, prev, odo, inputId, onYes){
+  const m2 = document.getElementById("modal2");
+  m2.innerHTML = `<div class="mback"><div class="panel mpanel" role="alertdialog" aria-modal="true">
+    <p class="msg">${msg}</p>
+    <p class="note">前回: ${prev} km　→　今回: <b>${escH(odo)}</b> km</p>
+    <button id="c-yes">この数値で入力</button>
+    <button id="c-no" class="ghost">やっぱり間違えたので訂正</button></div></div>`;
+  document.getElementById("c-yes").onclick = ()=>{ m2.innerHTML = ""; onYes(); };
+  document.getElementById("c-no").onclick = ()=>{
+    m2.innerHTML = ""; const el = document.getElementById(inputId); if(el){ el.focus(); el.select(); } };
+}
 function place(kind, ids){
   ids = ids || {odo:"odo", err:"err", status:"status"};
-  return async ()=>{
-    const odo = kind==="出発" ? "" : readOdo(ids.odo, ids.err);
-    if(odo===null) return;
+  const run = async (confirmed)=>{
+    let odo = "";
+    if(kind!=="出発"){
+      odo = readOdo(ids.odo, ids.err);
+      if(odo===null) return;
+      const prev = lastOdo(kind.includes("帰庫") && S.step==="depart");
+      if(prev!==null){
+        const d = Number(odo) - prev;
+        if(d<=0){ document.getElementById(ids.err).textContent = "前回の入力値より大きな値を入力してください"; return; }
+        if(!confirmed && (d>=100 || d<=3)){
+          askOdo(d>=100 ? "前回の入力値からかなりかけ離れていますが、正しいですか？"
+                        : "前回の入力値とあまり変わらないですが、正しいですか？",
+                 prev, odo, ids.odo, ()=>run(true));
+          return;
+        }
+      }
+    }
     const status = document.getElementById(ids.status);
     document.querySelectorAll("button").forEach(b=>b.disabled=true);
-    // 「違法帰庫」ボタンも、記録上の種別は「帰庫」(位置情報は取得せず固定住所)
-    // 「違法出庫」ボタンも同様に、記録上の種別は「乗務開始」(固定住所)
+    // 「違法帰庫」「違法出庫」ボタンは、記録上の種別は「帰庫」「乗務開始」(位置情報は取得せず固定住所)
     const FIXED = {"違法帰庫":["帰庫","東京都江戸川区東小松川２丁目"], "違法出庫":["乗務開始","東京都江戸川区東小松川２丁目１０"]};
     const fx = FIXED[kind], rowKind = fx ? fx[0] : kind;
     const p = fx ? {lat:"", lng:"", addr:fx[1]}
@@ -246,6 +281,7 @@ function place(kind, ids){
     addRow(rowKind, {odo, ...p});
     go(rowKind==="帰庫" ? "done" : (rowKind==="出発"||rowKind==="乗務開始") ? "arrive" : "depart");
   };
+  return ()=>run(false);
 }
 // 帰庫の確認ダイアログ
 function openKiko(kind){
@@ -267,6 +303,7 @@ function render(){
   editIdx = null;
   const st = S.step;
   document.getElementById("modal").innerHTML = "";
+  document.getElementById("modal2").innerHTML = "";
   const top = document.getElementById("topR");
   top.innerHTML = (st==="arrive"||st==="depart") ? '<button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button>'
                 : st==="odoStart" ? '<button id="deg">違法出庫</button>' : "";
@@ -288,14 +325,14 @@ function render(){
          <p class="note">運行管理者・整備管理者(補助者)のQRコードを読み取ってください。</p>
          <video id="cam" muted></video><p class="err" id="err"></p>
          <div id="manual" hidden><div class="row">
-           ${Object.entries(MANAGERS).map(([n,m])=>`<button class="ghost" data-m="${n}">${m}</button>`).join("")}
+           ${MANAGERS.map(m=>`<button class="ghost" data-m="${m}">${m}</button>`).join("")}
          </div></div></div>`;
   }else if(st==="odoStart"){
     h = `<div class="panel"><p class="msg">乗務を開始してください</p>
          ${odoInput("開始時Odoメーターを記録してください")}
          <p class="err" id="err"></p><p class="status" id="status"></p><button id="begin">乗務開始</button></div>`;
   }else if(st==="arrive"){
-    h = `<div class="panel"><p class="msg">Odoメーターを記録する</p>
+    h = `<div class="panel"><p class="msg">到着</p>
          ${odoInput("現在のOdoメーター")}
          <p class="err" id="err"></p><p class="status" id="status"></p>
          <div class="row"><button id="kaiso">回送で到着</button><button id="jissha" class="alt">実車で到着</button></div></div>`;
@@ -409,6 +446,10 @@ function saveEdit(i){
   if(HAS_ODO.includes(r.kind)){
     odo = g("e-odo").value.trim();
     if(!/^\d+$/.test(odo)){ err.textContent = "Odoメーターを数値で入力してください"; return; }
+    const near = dir => { for(let j=i+dir; j>=0 && j<S.rows.length; j+=dir){ if(/^\d+$/.test(String(S.rows[j].odo))) return Number(S.rows[j].odo); } return null; };
+    const pv = near(-1), nx = near(1);
+    if(pv!==null && Number(odo)<=pv){ err.textContent = "前回の入力値より大きな値を入力してください"; return; }
+    if(nx!==null && Number(odo)>=nx){ err.textContent = "次の記録の値より小さな値を入力してください"; return; }
   }
   if(HAS_PLACE.includes(r.kind)){
     addr = g("e-addr").value.trim(); lat = g("e-lat").value.trim(); lng = g("e-lng").value.trim();
@@ -428,7 +469,7 @@ function bind(st){
   if(st==="home") $("start").onclick = ()=>{ addRow("業務開始"); go("inspect"); };
   if(st==="inspect") $("ok").onclick = ()=>{ addRow("日常点検", {note:"異常なし"}); go("scan"); };
   if(st==="scan"){
-    view.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>chooseManager(Number(b.dataset.m)));
+    view.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>chooseManager(b.dataset.m));
     startScan();
   }
   if(st==="odoStart") $("begin").onclick = place("乗務開始");
