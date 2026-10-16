@@ -162,18 +162,18 @@
 
     // ---- 各ページの内容 ----
     const T = timeT();
-    const common = dep => ({
+    const common = (dep, customer) => ({
         start: { date: dot(now), place: "車庫" },
         end:   { date: dot(now), place: "車庫" },
-        customer: "Hilberlt",
+        customer: customer || "Hilberlt",
         people: "2",
         contact: "事務所経由で連絡",
         route: [ { dep: dep, via: "東関道ー首都高", dest: "JWマリオット", rest: "", sleep: "" } ]
     });
     const pages = [
-        Object.assign(common("成田空港T2（" + T + "）"), { created: daysAgo(3) }),   // 1ページ目
-        Object.assign(common("成田空港T1（" + T + "）"), { created: daysAgo(2) }),   // 2ページ目
-        {}                                                                            // 3ページ目は後で指示(いまは空欄の書式のみ)
+        Object.assign(common("成田空港T1（" + T + "）"), { created: daysAgo(2) }),                // 1ページ目
+        Object.assign(common("成田空港T2（" + T + "）"), { created: daysAgo(3) }),                // 2ページ目
+        Object.assign(common("羽田空港T3（" + T + "）", "Riemman"), { created: daysAgo(2) })      // 3ページ目
     ];
 
     const cellInput = (v, align) => '<input type="text" value="' + esc(v) + '" style="width: 95%; text-align: ' + (align || "center") + ';">';
