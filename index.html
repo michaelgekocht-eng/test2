@@ -68,6 +68,12 @@
   .shbar{display:flex;justify-content:space-between;align-items:center;padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;
     background:var(--panel);border-bottom:1px solid var(--line);font-weight:700}
   .shbar button{width:auto;min-height:40px;margin:0;padding:6px 18px;font-size:16px}
+  .vrow{display:flex;gap:8px;align-items:stretch}
+  .vrow input[type=number]{flex:1;width:auto;min-width:0}
+  .micBtn{width:auto;min-height:0;margin:0;padding:0 14px;font-size:22px;font-weight:700;
+    background:transparent;color:var(--ink);border:2px solid var(--line)}
+  .micBtn.rec{background:var(--warn);color:#fff;border-color:var(--warn);animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.6}}
   .seg{background:transparent;color:var(--ink);border:2px solid var(--line)}
   .seg.on{background:var(--go);color:var(--go-ink);border-color:var(--go)}
   .rec + .rec{margin-top:10px}
@@ -287,7 +293,7 @@ async function share(){
 
 // ---- 描画 ----
 function odoInput(label){
-  return `<label for="odo">${label}</label><input id="odo" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 123456">`;
+  return `<label for="odo">${label}</label><div class="vrow"><input id="odo" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 123456">${micBtns("odo")}</div>`;
 }
 function readOdo(oid="odo", eid="err"){
   const v = document.getElementById(oid).value.trim();
@@ -390,6 +396,90 @@ function openShijisho(){
     g("shj-print").onclick = ()=>w.print();
   }catch(e){} };
 }
+// ---- Odoメーターの音声入力(日本語 / 中文) ----
+// 聞き取った文を数値に直す。「59846」「5 9 8 4 6」「五万九千八百四十六」「5万9846」「ごーきゅうはちよんろく」「五九八四六」などに対応
+const VDIG = {"〇":0,"零":0,"一":1,"二":2,"两":2,"兩":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"幺":1};
+const VUNIT = {"十":10,"百":100,"千":1000};
+function vSection(s){   // 万の位より下(千・百・十を含む)
+  let total = 0, num = "";
+  for(const c of s){
+    if(VUNIT[c]){ total += (num==="" ? 1 : Number(num)) * VUNIT[c]; num = ""; }
+    else num += (/\d/.test(c) ? c : VDIG[c]);
+  }
+  return total + (num==="" ? 0 : Number(num));
+}
+function kanaDigits(t){   // ひらがな・カタカナだけの読み上げ(例: ごーきゅうはちよんろく)
+  const s = t.replace(/[ァ-ヶ]/g, c=>String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/[ー\s、,，。]/g, "");
+  if(!s || /[^ぁ-ん]/.test(s)) return null;
+  const toks = [["きゅう",9],["ぜろ",0],["しち",7],["さん",3],["よん",4],["ろく",6],["なな",7],["はち",8],["れい",0],["まる",0],["いち",1],["に",2],["ご",5],["し",4],["く",9],["よ",4]];
+  let out = "", i = 0;
+  while(i < s.length){ const m = toks.find(([k])=>s.startsWith(k, i)); if(!m) return null; out += m[1]; i += m[0].length; }
+  return out;
+}
+function speechToOdo(raw){
+  let t = String(raw).normalize("NFKC").trim();
+  const k = kanaDigits(t);
+  let n = null;
+  if(k !== null) n = Number(k);
+  else{
+    t = t.replace(/キロメートル|キロ|公里|千米|km/gi, "");
+    t = t.replace(/(\d)[\s,，、]+(?=\d)/g, "$1").replace(/(\d)[\s,，、]+(?=\d)/g, "$1");
+    const runs = t.match(/[0-9〇零一二三四五六七八九两兩幺十百千万萬]+/g);
+    if(!runs) return null;
+    const m = runs.sort((a,b)=>b.length-a.length)[0];
+    if(/[万萬]/.test(m)){ const [l, r=""] = m.split(/[万萬]/); n = (l ? vSection(l) : 1)*10000 + (r ? vSection(r) : 0); }
+    else if(/[十百千]/.test(m)) n = vSection(m);
+    else n = Number([...m].map(c=>/\d/.test(c) ? c : VDIG[c]).join(""));
+  }
+  return (Number.isFinite(n) && n >= 0 && n <= 9999999) ? String(n) : null;
+}
+const VKEY = "unten-voice-lang", SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const vlang = ()=>{ try{ return localStorage.getItem(VKEY)==="zh" ? "zh" : "ja"; }catch(e){ return "ja"; } };
+const vLabelFull = ()=>"音声: " + (vlang()==="zh" ? "中文" : "日本語");
+function setVLang(v){   // 最初の画面の選択ボタン・右上の切り替えボタンの表示をそろえて、選択を端末に保存する
+  try{ localStorage.setItem(VKEY, v); }catch(e){}
+  document.querySelectorAll(".vseg").forEach(b=>b.classList.toggle("on", b.dataset.v===v));
+  document.querySelectorAll(".vlBtn").forEach(b=>b.textContent = vLabelFull());
+}
+const micBtns = id => `<button type="button" class="micBtn" data-for="${id}" aria-label="音声入力">🎤</button>`;
+const VSTAT = {"odo":"status", "m-odo":"m-status", "f-odo":"status"};
+let curRec = null;
+function listenOdo(inputId, btn){
+  const say = t => { const e = document.getElementById(VSTAT[inputId]); if(e) e.textContent = t; };
+  if(curRec){ try{ curRec.stop(); }catch(e){} return; }                      // 録音中にもう一度押すと停止
+  if(!SR){ say("この端末・ブラウザでは音声入力を使えません。手入力してください。"); return; }
+  const rec = new SR(); curRec = rec;
+  rec.lang = vlang()==="zh" ? "zh-CN" : "ja-JP"; rec.interimResults = false; rec.maxAlternatives = 5; rec.continuous = false;
+  btn.classList.add("rec"); say(vlang()==="zh" ? "请说出里程数…" : "Odoメーターの数字を話してください…");
+  let got = false;
+  rec.onresult = ev=>{
+    got = true;
+    const alts = Array.from(ev.results[0]).map(a=>a.transcript);
+    for(const t of alts){
+      const v = speechToOdo(t);
+      if(v !== null){
+        const el = document.getElementById(inputId);
+        if(el){ el.value = v; el.dispatchEvent(new Event("input", {bubbles:true})); }
+        say(`「${t}」→ ${v} と聞き取りました。確認してください。`); return;
+      }
+    }
+    say(`数値として聞き取れませんでした(「${alts[0]}」)。もう一度、または手入力してください。`);
+  };
+  rec.onerror = ev=>{
+    got = true;
+    const msg = {"not-allowed":"マイクの使用が許可されていません。", "service-not-allowed":"音声入力が許可されていません。", "no-speech":"音声が聞こえませんでした。",
+      "network":"音声認識には通信が必要です。", "audio-capture":"マイクが見つかりません。", "language-not-supported":"この言語には対応していません。"}[ev.error];
+    say((msg || "音声入力に失敗しました。") + "手入力もできます。");
+  };
+  rec.onend = ()=>{ btn.classList.remove("rec"); curRec = null; if(!got) say("聞き取れませんでした。もう一度お試しください。"); };
+  try{ rec.start(); }catch(e){ btn.classList.remove("rec"); curRec = null; say("音声入力を開始できませんでした。"); }
+}
+document.addEventListener("click", e=>{
+  const mic = e.target.closest(".micBtn"), seg = e.target.closest(".vseg"), vb = e.target.closest(".vlBtn");
+  if(mic) listenOdo(mic.dataset.for, mic);
+  if(seg) setVLang(seg.dataset.v);                                   // 最初の画面で選ぶ
+  if(vb) setVLang(vlang()==="zh" ? "ja" : "zh");                     // 右上のボタンで切り替える
+});
 // 給油の記録(Odo・給油量・位置情報)。直前の画面(出発後=到着画面 / 到着後=出発画面)に戻る
 async function recordFuel(){
   const err = document.getElementById("err");
@@ -419,7 +509,7 @@ function openKiko(kind){
     ${kind==="違法帰庫" ? '<p class="note">(違法帰庫: 位置情報は取得せず、固定住所を記録します)</p>' : ""}
     ${reuse ? '<p class="note">直近の「到着」の記録を、帰庫の記録として使います。</p>'
             : `<label for="m-odo">帰庫時のOdoメーター</label>
-    <input id="m-odo" type="number" inputmode="numeric" min="0" step="1" value="${cur ? escH(cur.value) : ""}">`}
+    <div class="vrow"><input id="m-odo" type="number" inputmode="numeric" min="0" step="1" value="${cur ? escH(cur.value) : ""}">${micBtns("m-odo")}</div>`}
     <p class="err" id="m-err"></p><p class="status" id="m-status"></p>
     <button id="m-yes">疲れたので帰庫します</button>
     <button id="m-no" class="ghost">やっぱりまだ働きます</button></div></div>`;
@@ -435,7 +525,8 @@ function renderTop(){
                  : '<div class="tr"><button id="mrg">データの合体</button></div>') : "";
   top.innerHTML = ((st==="arrive"||st==="depart") ? '<div class="tr"><button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button></div><div class="tr"><button id="shj">運行指示書</button><button id="fuel">給油</button></div>'
                 : st==="odoStart" ? '<div class="tr"><button id="deg">違法出庫</button></div>'
-                : st==="done" ? '<div class="tr"><button id="dl">CSVをダウンロード</button></div>' : "") + mrg;
+                : st==="done" ? '<div class="tr"><button id="dl">CSVをダウンロード</button></div>' : "") + mrg
+    + ((st==="odoStart"||st==="arrive"||st==="depart"||st==="fuel") ? `<div class="tr"><button id="vl" class="vlBtn">${vLabelFull()}</button></div>` : "");
   const $$ = id => document.getElementById(id);
   if(st==="arrive"||st==="depart"){
     $$("kiko").onclick = ()=>openKiko("帰庫");
@@ -463,6 +554,8 @@ function render(){
   if(st==="home"){
     h = `<div class="panel"><label for="veh" style="font-size:20px">本日の担当車の番号を入力してください</label>
          <input id="veh" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 12" value="${escH(S.vehicle||"")}">
+         <label style="font-size:16px;margin-top:18px">音声入力の言語</label>
+         <div class="row"><button type="button" class="seg vseg${vlang()==="ja"?" on":""}" data-v="ja">日本語</button><button type="button" class="seg vseg${vlang()==="zh"?" on":""}" data-v="zh">中文</button></div>
          <button id="start" disabled>業務を開始する</button></div>`;
   }else if(st==="inspect"){
     h = `<div class="panel"><p class="msg">日常点検をしてください</p>
@@ -491,7 +584,7 @@ function render(){
   }else if(st==="fuel"){
     h = `<div class="panel"><p class="msg">給油</p>
          <label for="f-odo">給油時のOdoメーター</label>
-         <input id="f-odo" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 123456">
+         <div class="vrow"><input id="f-odo" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 123456">${micBtns("f-odo")}</div>
          <label for="f-amt" style="margin-top:14px">給油量 (L)</label>
          <input id="f-amt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="例: 35.5">
          <p class="err" id="err"></p><p class="status" id="status"></p>
