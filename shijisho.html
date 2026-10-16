@@ -157,23 +157,23 @@
         const r = Math.round(mins / 15) * 15;
         return pad(Math.floor(r / 60) % 24) + ":" + pad(r % 60);
     }
-    // 作成日: 開いた日の3日前
-    const created = jp(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3));
+    // 作成日: 開いた日の n 日前
+    const daysAgo = n => jp(new Date(now.getFullYear(), now.getMonth(), now.getDate() - n));
 
     // ---- 各ページの内容 ----
+    const T = timeT();
+    const common = dep => ({
+        start: { date: dot(now), place: "車庫" },
+        end:   { date: dot(now), place: "車庫" },
+        customer: "Hilberlt",
+        people: "2",
+        contact: "事務所経由で連絡",
+        route: [ { dep: dep, via: "東関道ー首都高", dest: "JWマリオット", rest: "", sleep: "" } ]
+    });
     const pages = [
-        {   // 1ページ目
-            start: { date: dot(now), place: "車庫" },
-            end:   { date: dot(now), place: "車庫" },
-            customer: "Hilberlt",
-            people: "2",
-            contact: "事務所経由で連絡",
-            route: [
-                { dep: "成田空港T2（" + timeT() + "）", via: "東関道ー首都高", dest: "JWマリオット", rest: "", sleep: "" }
-            ]
-        },
-        {   // 2ページ目以降は後で指示(いまは空欄の書式のみ)
-        }
+        Object.assign(common("成田空港T2（" + T + "）"), { created: daysAgo(3) }),   // 1ページ目
+        Object.assign(common("成田空港T1（" + T + "）"), { created: daysAgo(2) }),   // 2ページ目
+        {}                                                                            // 3ページ目は後で指示(いまは空欄の書式のみ)
     ];
 
     const cellInput = (v, align) => '<input type="text" value="' + esc(v) + '" style="width: 95%; text-align: ' + (align || "center") + ';">';
@@ -206,7 +206,7 @@
                 </div>
                 <div style="display: flex; gap: 20px; align-items: flex-end;">
                     <div style="font-size: 1.1em; font-weight: bold; text-align: left;">
-                        作成日：<input type="text" value="${esc(created)}" style="display: inline-block; width: 190px; text-align: center; border-bottom: 1px solid #333; font-weight: bold;"><br>
+                        作成日：<input type="text" value="${esc(d.created)}" style="display: inline-block; width: 190px; text-align: center; border-bottom: 1px solid #333; font-weight: bold;"><br>
                         株式会社　樂涛
                     </div>
                     <div class="stamp-box"><div class="stamp-title">運行管理者</div><div class="stamp-mark">印</div></div>
