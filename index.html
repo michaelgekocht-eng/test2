@@ -65,6 +65,9 @@
   .mk input{width:26px;height:26px;margin:0;accent-color:var(--blue)}
   li.mhint{color:var(--blue);font-weight:700;font-size:14px;padding:0 0 10px}
   .mini{border:2px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:14px;color:var(--ink)}
+  .shbar{display:flex;justify-content:space-between;align-items:center;padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;
+    background:var(--panel);border-bottom:1px solid var(--line);font-weight:700}
+  .shbar button{width:auto;min-height:40px;margin:0;padding:6px 18px;font-size:16px}
   .seg{background:transparent;color:var(--ink);border:2px solid var(--line)}
   .seg.on{background:var(--go);color:var(--go-ink);border-color:var(--go)}
   .rec + .rec{margin-top:10px}
@@ -362,6 +365,22 @@ function openCheck(title="点検表", items=CHECK_ITEMS){
     const on = b.classList.toggle("on"); b.textContent = on ? "✓ 異常なし" : "異常なし"; });
   document.getElementById("ck-close").onclick = ()=>{ m.innerHTML = ""; };
 }
+// ---- 運行指示書(shijisho.html を画面いっぱいに表示。幅1100pxの紙面を画面幅に合わせて縮小し、ピンチで拡大できる) ----
+function openShijisho(){
+  const q = new URLSearchParams(); if(S.vehicle) q.set("carPlate", S.vehicle);
+  const src = "shijisho.html" + (q.toString() ? "?"+q.toString() : "");
+  const W = 1100, sc = Math.min(1, document.documentElement.clientWidth / W), m = document.getElementById("modal2");
+  m.innerHTML = `<div class="mback" style="align-items:stretch;padding:0;background:var(--bg);display:block">
+    <div class="shbar"><span>運行指示書</span><button id="shj-close">閉じる</button></div>
+    <div style="height:calc(100% - 58px);overflow:auto;-webkit-overflow-scrolling:touch">
+      <div id="shj-wrap" style="width:${W*sc}px;height:${1150*sc}px;margin:0 auto">
+        <iframe id="shj-frame" title="運行指示書" src="${src}" style="width:${W}px;height:1150px;border:0;background:#fff;transform:scale(${sc});transform-origin:0 0"></iframe>
+      </div></div></div>`;
+  document.getElementById("shj-close").onclick = ()=>{ m.innerHTML = ""; };
+  const f = document.getElementById("shj-frame");
+  f.onload = ()=>{ try{ const h = f.contentDocument.documentElement.scrollHeight;
+    f.style.height = h+"px"; document.getElementById("shj-wrap").style.height = (h*sc)+"px"; }catch(e){} };
+}
 // 給油の記録(Odo・給油量・位置情報)。直前の画面(出発後=到着画面 / 到着後=出発画面)に戻る
 async function recordFuel(){
   const err = document.getElementById("err");
@@ -405,7 +424,7 @@ function renderTop(){
   const mrg = (st==="arrive"||st==="depart"||st==="done")
     ? (mergeMode ? `<div class="tr"><button id="mrgX">中止</button><button id="mrgGo"${mergeSel.length<2?" disabled":""}>合体する</button></div>`
                  : '<div class="tr"><button id="mrg">データの合体</button></div>') : "";
-  top.innerHTML = ((st==="arrive"||st==="depart") ? '<div class="tr"><button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button></div><div class="tr"><button id="fuel">給油</button></div>'
+  top.innerHTML = ((st==="arrive"||st==="depart") ? '<div class="tr"><button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button></div><div class="tr"><button id="shj">運行指示書</button><button id="fuel">給油</button></div>'
                 : st==="odoStart" ? '<div class="tr"><button id="deg">違法出庫</button></div>'
                 : st==="done" ? '<div class="tr"><button id="dl">CSVをダウンロード</button></div>' : "") + mrg;
   const $$ = id => document.getElementById(id);
@@ -413,6 +432,7 @@ function renderTop(){
     $$("kiko").onclick = ()=>openKiko("帰庫");
     $$("kiko2").onclick = ()=>openKiko("違法帰庫");
     $$("fuel").onclick = ()=>{ S.fuelFrom = S.step; go("fuel"); };
+    $$("shj").onclick = openShijisho;
   }
   if(st==="odoStart") $$("deg").onclick = place("違法出庫");
   if(st==="done") $$("dl").onclick = download;
