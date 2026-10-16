@@ -18,8 +18,16 @@
         padding: 0 16px;
         display: flex;
         justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
     }
-    .print-btn {
+    .nav-btn:disabled { opacity: .4; cursor: default; }
+    #pg { min-width: 56px; text-align: center; font-weight: bold; }
+    .sheet { display: none; }
+    .sheet.active { display: block; }
+    body.embed .toolbar { display: none; }
+    body.embed .container { margin-top: 0; }
+    .print-btn, .nav-btn {
         background: #2c3e50;
         color: #fff;
         padding: 10px 24px;
@@ -126,107 +134,160 @@
 <body>
 
 <div class="toolbar">
+    <button class="nav-btn" id="prev">戻る</button>
+    <span id="pg">1 / 1</span>
+    <button class="nav-btn" id="next">次へ</button>
     <button class="print-btn" onclick="window.print()">印刷する</button>
 </div>
 
-<div class="container">
-    <div class="shijisho-page">
-        <h2 class="shijisho-title">運行指示書</h2>
-
-        <div class="top-row">
-            <div style="width: 45%;">
-                <table style="margin-bottom: 0;">
-                    <tr>
-                        <th style="width: 35%; height: 3em;">乗務員氏名</th>
-                        <td style="text-align: left; padding-left: 10px; height: 3em;"><input type="text" id="driver" style="width: 90%; font-size: 1.1em; font-weight: bold;"></td>
-                    </tr>
-                    <tr>
-                        <th style="height: 3em;">車両名 / 車両番号</th>
-                        <td id="car-cell" style="text-align: left; padding-left: 10px; font-weight: bold; height: 3em;"><input type="text" id="car" style="width: 90%; font-weight: bold;"></td>
-                    </tr>
-                </table>
-            </div>
-            <div style="display: flex; gap: 20px; align-items: flex-end;">
-                <div style="font-size: 1.1em; font-weight: bold; text-align: left;">
-                    作成日：<input type="text" id="created" style="display: inline-block; width: 190px; text-align: center; border-bottom: 1px solid #333; font-weight: bold;"><br>
-                    株式会社　樂涛
-                </div>
-                <div class="stamp-box"><div class="stamp-title">運行管理者</div><div class="stamp-mark">印</div></div>
-            </div>
-        </div>
-
-        <table>
-            <tr>
-                <th style="width: 10%;">運行開始</th>
-                <td style="width: 15%; text-align: left; padding: 10px; vertical-align: top;">日時：<br><br>地点：</td>
-                <th style="width: 10%;">運行終了</th>
-                <td style="width: 15%; text-align: left; padding: 10px; vertical-align: top;">日時：<br><br>地点：</td>
-
-                <th style="width: 10%; padding: 0;">
-                    <div style="border-bottom: 1px solid #bdc3c7; padding: 4px;">お客様名</div>
-                    <div style="padding: 4px;">人数</div>
-                </th>
-                <td style="width: 15%; padding: 0;">
-                    <div style="border-bottom: 1px solid #bdc3c7; padding: 4px;"><input id="customer" type="text" style="width: 90%;"></div>
-                    <div style="padding: 4px; display: flex; align-items: center; justify-content: center;">
-                        <input id="people" type="text" style="width: 60%; text-align: right;">
-                        <span style="margin-left: 5px;">人</span>
-                    </div>
-                </td>
-
-                <th style="width: 10%;">連絡先</th>
-                <td style="width: 15%;"><input id="contact" type="text" style="width: 90%;"></td>
-            </tr>
-        </table>
-
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 20%;">出発場所・時間</th>
-                    <th style="width: 25%;">運行の経路・主な経過地</th>
-                    <th style="width: 20%;">目的地</th>
-                    <th style="width: 20%;">休憩地点・宿泊地点</th>
-                    <th style="width: 15%;">休憩・睡眠時間</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr class="route-row"><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr class="route-row"><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr class="route-row"><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr class="route-row"><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr class="route-row"><td></td><td></td><td></td><td></td><td></td></tr>
-            </tbody>
-        </table>
-
-        <div class="notes-row">
-            <table><tr><th>運行に際して注意を要する箇所の位置</th></tr><tr><td></td></tr></table>
-            <table><tr><th>その他運行の安全を確保するために必要な事項</th></tr><tr><td></td></tr></table>
-        </div>
-    </div>
-</div>
+<div class="container" id="sheets"></div>
 
 <script>
-    // 作成日：今日の日付を初期値にする（書き換え可）
-    (function () {
-        const d = new Date();
-        const w = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
-        const pad = n => String(n).padStart(2, "0");
-        document.getElementById("created").value =
-            d.getFullYear() + "年" + pad(d.getMonth() + 1) + "月" + pad(d.getDate()) + "日 (" + w + ")";
-    })();
+    const pad = n => String(n).padStart(2, "0");
+    const WD = ["日", "月", "火", "水", "木", "金", "土"];
+    const now = new Date();                                   // このページを開いた時点
+    const dot = d => d.getFullYear() + "." + pad(d.getMonth() + 1) + "." + pad(d.getDate());          // YYYY.MM.DD
+    const jp = d => d.getFullYear() + "年" + pad(d.getMonth() + 1) + "月" + pad(d.getDate()) + "日 (" + WD[d.getDay()] + ")";
+    const esc = v => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 
-    // URLの指定で入力欄を埋める（元の画面と同じ）:
-    //   ?customer=…&people=…&contact=…&carName=…&carPlate=…&driver=…
-    (function () {
-        const q = new URLSearchParams(location.search);
-        const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
-        set("customer", q.get("customer"));
-        set("people", (q.get("people") || "").match(/\d+/) ? q.get("people").match(/\d+/)[0] : "");
-        set("contact", q.get("contact"));
-        set("driver", q.get("driver"));
-        const name = q.get("carName") || "", plate = q.get("carPlate") || "";
-        if (name || plate) set("car", [name, plate].filter(Boolean).join(" / "));
-    })();
+    // 時刻T: 開いた時点の1時間10分後を、15分刻み(近い方)に丸めて HH:MM で表示する(12:34→12:30、14:40→14:45)
+    function timeT() {
+        const t = new Date(now.getTime() + 70 * 60000);
+        const mins = t.getHours() * 60 + t.getMinutes() + t.getSeconds() / 60;
+        const r = Math.round(mins / 15) * 15;
+        return pad(Math.floor(r / 60) % 24) + ":" + pad(r % 60);
+    }
+    // 作成日: 開いた日の3日前
+    const created = jp(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3));
+
+    // ---- 各ページの内容 ----
+    const pages = [
+        {   // 1ページ目
+            start: { date: dot(now), place: "車庫" },
+            end:   { date: dot(now), place: "車庫" },
+            customer: "Hilberlt",
+            people: "2",
+            contact: "事務所経由で連絡",
+            route: [
+                { dep: "成田空港T2（" + timeT() + "）", via: "東関道ー首都高", dest: "JWマリオット", rest: "", sleep: "" }
+            ]
+        },
+        {   // 2ページ目以降は後で指示(いまは空欄の書式のみ)
+        }
+    ];
+
+    const cellInput = (v, align) => '<input type="text" value="' + esc(v) + '" style="width: 95%; text-align: ' + (align || "center") + ';">';
+
+    function sheetHtml(d) {
+        d = d || {};
+        const s = d.start || {}, e = d.end || {};
+        const rows = [];
+        for (let i = 0; i < 5; i++) {
+            const r = (d.route || [])[i] || {};
+            rows.push('<tr class="route-row"><td>' + cellInput(r.dep) + '</td><td>' + cellInput(r.via) + '</td><td>' + cellInput(r.dest) +
+                      '</td><td>' + cellInput(r.rest) + '</td><td>' + cellInput(r.sleep) + '</td></tr>');
+        }
+        return `
+        <div class="shijisho-page sheet">
+            <h2 class="shijisho-title">運行指示書</h2>
+
+            <div class="top-row">
+                <div style="width: 45%;">
+                    <table style="margin-bottom: 0;">
+                        <tr>
+                            <th style="width: 35%; height: 3em;">乗務員氏名</th>
+                            <td style="text-align: left; padding-left: 10px; height: 3em;"><input type="text" class="driver" style="width: 90%; font-size: 1.1em; font-weight: bold;"></td>
+                        </tr>
+                        <tr>
+                            <th style="height: 3em;">車両名 / 車両番号</th>
+                            <td style="text-align: left; padding-left: 10px; font-weight: bold; height: 3em;"><input type="text" class="car" style="width: 90%; font-weight: bold;"></td>
+                        </tr>
+                    </table>
+                </div>
+                <div style="display: flex; gap: 20px; align-items: flex-end;">
+                    <div style="font-size: 1.1em; font-weight: bold; text-align: left;">
+                        作成日：<input type="text" value="${esc(created)}" style="display: inline-block; width: 190px; text-align: center; border-bottom: 1px solid #333; font-weight: bold;"><br>
+                        株式会社　樂涛
+                    </div>
+                    <div class="stamp-box"><div class="stamp-title">運行管理者</div><div class="stamp-mark">印</div></div>
+                </div>
+            </div>
+
+            <table>
+                <tr>
+                    <th style="width: 10%;">運行開始</th>
+                    <td style="width: 15%; text-align: left; padding: 10px; vertical-align: top;">日時：<input type="text" value="${esc(s.date)}" style="width: 65%;"><br><br>地点：<input type="text" value="${esc(s.place)}" style="width: 65%;"></td>
+                    <th style="width: 10%;">運行終了</th>
+                    <td style="width: 15%; text-align: left; padding: 10px; vertical-align: top;">日時：<input type="text" value="${esc(e.date)}" style="width: 65%;"><br><br>地点：<input type="text" value="${esc(e.place)}" style="width: 65%;"></td>
+
+                    <th style="width: 10%; padding: 0;">
+                        <div style="border-bottom: 1px solid #bdc3c7; padding: 4px;">お客様名</div>
+                        <div style="padding: 4px;">人数</div>
+                    </th>
+                    <td style="width: 15%; padding: 0;">
+                        <div style="border-bottom: 1px solid #bdc3c7; padding: 4px;"><input class="customer" type="text" value="${esc(d.customer)}" style="width: 90%;"></div>
+                        <div style="padding: 4px; display: flex; align-items: center; justify-content: center;">
+                            <input class="people" type="text" value="${esc(d.people)}" style="width: 60%; text-align: right;">
+                            <span style="margin-left: 5px;">人</span>
+                        </div>
+                    </td>
+
+                    <th style="width: 10%;">連絡先</th>
+                    <td style="width: 15%;"><input class="contact" type="text" value="${esc(d.contact)}" style="width: 90%;"></td>
+                </tr>
+            </table>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 20%;">出発場所・時間</th>
+                        <th style="width: 25%;">運行の経路・主な経過地</th>
+                        <th style="width: 20%;">目的地</th>
+                        <th style="width: 20%;">休憩地点・宿泊地点</th>
+                        <th style="width: 15%;">休憩・睡眠時間</th>
+                    </tr>
+                </thead>
+                <tbody>${rows.join("")}</tbody>
+            </table>
+
+            <div class="notes-row">
+                <table><tr><th>運行に際して注意を要する箇所の位置</th></tr><tr><td></td></tr></table>
+                <table><tr><th>その他運行の安全を確保するために必要な事項</th></tr><tr><td></td></tr></table>
+            </div>
+        </div>`;
+    }
+
+    const box = document.getElementById("sheets");
+    box.innerHTML = pages.map(sheetHtml).join("");
+    const sheets = Array.from(box.querySelectorAll(".sheet"));
+
+    // URLの指定で入力欄を埋める(全ページ共通):
+    //   ?customer=…&people=…&contact=…&carName=…&carPlate=…&driver=…   (embed=1 は画面内表示用)
+    const q = new URLSearchParams(location.search);
+    const setAll = (cls, v) => { if (v) document.querySelectorAll("." + cls).forEach(el => el.value = v); };
+    setAll("customer", q.get("customer"));
+    setAll("people", (q.get("people") || "").match(/\d+/) ? q.get("people").match(/\d+/)[0] : "");
+    setAll("contact", q.get("contact"));
+    setAll("driver", q.get("driver"));
+    const carName = q.get("carName") || "", carPlate = q.get("carPlate") || "";
+    setAll("car", [carName, carPlate].filter(Boolean).join(" / "));
+    if (q.get("embed") === "1") document.body.classList.add("embed");
+
+    // ---- ページの行き来(戻る / 次へ) ----
+    let cur = 0;
+    const prevBtn = document.getElementById("prev"), nextBtn = document.getElementById("next"), pg = document.getElementById("pg");
+    function show(i) {
+        cur = Math.max(0, Math.min(sheets.length - 1, i));
+        sheets.forEach((s, k) => s.classList.toggle("active", k === cur));
+        pg.textContent = (cur + 1) + " / " + sheets.length;
+        prevBtn.disabled = cur === 0;
+        nextBtn.disabled = cur === sheets.length - 1;
+    }
+    prevBtn.onclick = () => show(cur - 1);
+    nextBtn.onclick = () => show(cur + 1);
+    window.shijishoGo = d => { show(cur + d); return { cur: cur + 1, total: sheets.length }; };   // 親画面から呼ぶ用
+    window.shijishoInfo = () => ({ cur: cur + 1, total: sheets.length });
+    show(0);
 </script>
 </body>
 </html>

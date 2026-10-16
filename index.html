@@ -367,19 +367,28 @@ function openCheck(title="点検表", items=CHECK_ITEMS){
 }
 // ---- 運行指示書(shijisho.html を画面いっぱいに表示。幅1100pxの紙面を画面幅に合わせて縮小し、ピンチで拡大できる) ----
 function openShijisho(){
-  const q = new URLSearchParams(); if(S.vehicle) q.set("carPlate", S.vehicle);
-  const src = "shijisho.html" + (q.toString() ? "?"+q.toString() : "");
+  const q = new URLSearchParams({embed:"1"}); if(S.vehicle) q.set("carPlate", S.vehicle);
   const W = 1100, sc = Math.min(1, document.documentElement.clientWidth / W), m = document.getElementById("modal2");
-  m.innerHTML = `<div class="mback" style="align-items:stretch;padding:0;background:var(--bg);display:block">
-    <div class="shbar"><span>運行指示書</span><button id="shj-close">閉じる</button></div>
-    <div style="height:calc(100% - 58px);overflow:auto;-webkit-overflow-scrolling:touch">
+  m.innerHTML = `<div class="mback" style="padding:0;background:var(--bg);display:flex;flex-direction:column;align-items:stretch">
+    <div class="shbar">
+      <span style="display:flex;align-items:center;gap:6px"><button id="shj-prev">戻る</button><b id="shj-pg" style="min-width:48px;text-align:center">1 / 1</b><button id="shj-next">次へ</button></span>
+      <span style="display:flex;gap:6px"><button id="shj-print" class="ghost">印刷</button><button id="shj-close">閉じる</button></span>
+    </div>
+    <div style="flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch">
       <div id="shj-wrap" style="width:${W*sc}px;height:${1150*sc}px;margin:0 auto">
-        <iframe id="shj-frame" title="運行指示書" src="${src}" style="width:${W}px;height:1150px;border:0;background:#fff;transform:scale(${sc});transform-origin:0 0"></iframe>
+        <iframe id="shj-frame" title="運行指示書" src="shijisho.html?${q.toString()}" style="width:${W}px;height:1150px;border:0;background:#fff;transform:scale(${sc});transform-origin:0 0"></iframe>
       </div></div></div>`;
-  document.getElementById("shj-close").onclick = ()=>{ m.innerHTML = ""; };
-  const f = document.getElementById("shj-frame");
-  f.onload = ()=>{ try{ const h = f.contentDocument.documentElement.scrollHeight;
-    f.style.height = h+"px"; document.getElementById("shj-wrap").style.height = (h*sc)+"px"; }catch(e){} };
+  const g = id => document.getElementById(id), f = g("shj-frame");
+  g("shj-close").onclick = ()=>{ m.innerHTML = ""; };
+  f.onload = ()=>{ try{
+    const w = f.contentWindow;
+    const upd = i => { g("shj-pg").textContent = i.cur+" / "+i.total; g("shj-prev").disabled = i.cur<=1; g("shj-next").disabled = i.cur>=i.total; };
+    const fit = ()=>{ const h = f.contentDocument.documentElement.scrollHeight; f.style.height = h+"px"; g("shj-wrap").style.height = (h*sc)+"px"; };
+    upd(w.shijishoInfo()); fit();
+    g("shj-prev").onclick = ()=>{ upd(w.shijishoGo(-1)); fit(); };
+    g("shj-next").onclick = ()=>{ upd(w.shijishoGo(1)); fit(); };
+    g("shj-print").onclick = ()=>w.print();
+  }catch(e){} };
 }
 // 給油の記録(Odo・給油量・位置情報)。直前の画面(出発後=到着画面 / 到着後=出発画面)に戻る
 async function recordFuel(){
