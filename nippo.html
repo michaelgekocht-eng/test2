@@ -5,330 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>乗務日報</title>
 <style>
-    body { 
-        font-family: 'Helvetica Neue', Arial, sans-serif; 
-        background-color: #f0f4f8; 
-        color: #333; 
-        margin: 0; 
-        padding: 0; 
-    }
-    .header {
-        background-color: #2c3e50;
-        color: white;
-        padding: 15px 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-    }
-    
-    h1.main-title {
-        margin: 0;
-        font-size: 1.5em;
-    }
-    
-    .container {
-        max-width: 1200px;
-        margin: 20px auto;
-        background: white;
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        min-height: 600px;
-    }
+    *{box-sizing:border-box}
+    body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f0f4f8;color:#333;margin:0;padding:0}
+    .toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px}
+    .toolbar button{background:#2c3e50;color:#fff;padding:10px 24px;border:none;border-radius:4px;cursor:pointer;font-size:1em}
+    .toolbar .back{background:#95a5a6}
+    #fit{overflow:hidden}
+    /* 紙面は幅1200の座標で作り、画面幅・用紙幅に合わせて縮小する */
+    .sheet{width:1200px;margin:0 auto 20px;background:#fff;padding:20px 0 20px;zoom:var(--z,1);color:#333}
+    .title{margin:0;height:44px;line-height:36px;text-align:center;font-size:22.5px;font-weight:bold;color:#2c3e50;border-bottom:2px solid #2c3e50}
+    .hd{margin-top:20px;height:70px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:12px 0 0 10px;display:flex;gap:12px}
+    .hd .it label{display:block;font-size:13px;color:#555;line-height:18px;margin-bottom:2px}
+    .hd .val{font-size:15px;font-weight:bold;color:#2c3e50;line-height:26px}
+    .hd .date{font-size:13px;font-weight:bold;color:#2c3e50;line-height:26px;text-align:center;align-self:flex-end;padding-bottom:12px}
+    .hd input{width:185px;height:26px;border:1px solid #ccc;border-radius:4px;padding:2px 6px;font:inherit;font-size:14px;background:#fff}
+    .main{display:flex;gap:18px;margin-top:15px}
+    .left{width:260px;flex:none}
+    .right{width:922px;flex:none}
+    .lbl{height:20px;line-height:20px;font-size:16px;font-weight:bold;color:#2c3e50;margin-bottom:10px}
+    .lbl.g{margin-top:15px}
+    .box{height:34px;border:1px solid #7f8c8d;border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:bold}
+    table{border-collapse:collapse;width:100%;table-layout:fixed}
+    th,td{border:1px solid #bdc3c7;text-align:center;vertical-align:middle;padding:0 4px}
+    th{background:#ecf0f1;color:#2c3e50;font-weight:bold}
+    .chk td{height:27.8px;text-align:left;padding:0 7px;font-size:12px;color:#222;white-space:nowrap}
+    .chk td+td{width:52px;text-align:center;padding:0}
+    .chk td{overflow:hidden}
+    .run{font-size:11px}
+    .run th,.run td{height:25px;padding:0 3px}
+    .stamps{display:flex;justify-content:center;gap:19px;margin-top:19px}
+    .stamp{width:67px;height:67px;border:1px solid #333;background:#fff;display:flex;flex-direction:column}
+    .stamp .t{font-size:8px;text-align:center;border-bottom:1px solid #333;padding:2px 0;line-height:1.1;color:#222}
+    .stamp .m{flex:1;display:flex;align-items:center;justify-content:center;color:#e0e0e0;font-size:28px}
+    .bottom{display:flex;gap:19px;margin-top:20px}
+    .bottom .lbl{margin-bottom:8px}
+    .fuel{width:305px}
+    .fuel table{font-size:11px}
+    .fuel th,.fuel td{height:36px}
+    .fuel .diag{background:linear-gradient(to top right,transparent 49.5%,#bdc3c7 49.5%,#bdc3c7 50.5%,transparent 50.5%)}
+    .fuel .lbl.g{margin-top:11px;margin-bottom:9px}
+    .post{width:303px}
+    .post table td{height:25px;padding:0 9px;font-size:11px;color:#222}
+    .post td div{display:flex;justify-content:space-between}
+    .rep{margin-top:9px;height:198px;border:1px solid #bdc3c7;border-radius:4px;padding:3px 4px;font-size:12px;font-weight:bold;color:#2c3e50}
+    .rest{width:276px;text-align:center}
+    .rest .lbl{text-align:center;margin:28px 0 7px}
+    .rest table{font-size:11px}
+    .rest th,.rest td{height:25px}
+    .rest .stamp{margin:9px auto 0}
+    .alc{font-size:10px;margin-top:6px;color:#333;white-space:nowrap}
+    .cir{display:inline-block;border:1px solid #000;border-radius:50%;line-height:1.2;padding:0 .25em;margin:-.1em -.2em}
 
-    .view { display: none; }
-    .view.active { display: block; }
-
-    .menu-buttons {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 20px;
-        margin-top: 20px;
+    @media print{
+        @page{size:A4 landscape;margin:10mm}
+        body{background:#fff}
+        .toolbar{display:none!important}
+        #fit{overflow:visible}
+        .sheet{zoom:.873;margin:0 auto;padding:0}
+        .hd input{border-color:transparent;background:transparent}
     }
-    .main-btn {
-        background-color: #3498db;
-        color: white;
-        padding: 25px 50px;
-        font-size: 1.5em;
-        border-radius: 12px;
-        font-weight: bold;
-        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
-        border: none;
-        cursor: pointer;
-        width: 80%;
-        max-width: 400px;
-        transition: 0.2s;
-    }
-    .main-btn:hover {
-        opacity: 0.9;
-        transform: translateY(-2px);
-    }
-
-    .btn-top-exit {
-        background-color: #e67e22;
-        box-shadow: 0 4px 15px rgba(230, 126, 34, 0.4);
-        margin-bottom: 20px;
-    }
-    
-    .btn-back {
-        background-color: #95a5a6;
-        color: white;
-        padding: 10px 20px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 1em;
-        margin-bottom: 20px;
-    }
-
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
-        font-size: 0.85em;
-    }
-    th, td {
-        border: 1px solid #bdc3c7;
-        padding: 4px;
-        text-align: center;
-        vertical-align: middle;
-    }
-    th {
-        background-color: #ecf0f1;
-        color: #2c3e50;
-    }
-    input[type="text"], input[type="number"], input[type="time"], input[type="date"], select {
-        width: 90%;
-        padding: 4px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-    }
-
-    .nippo-page, .shijisho-page {
-        margin-bottom: 50px;
-    }
-    .nippo-header-flex {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 15px;
-        background: #f8f9fa;
-        padding: 10px 15px;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
-    }
-    .nippo-info-row {
-        display: flex;
-        gap: 15px;
-        align-items: flex-end;
-    }
-    .nippo-info-item label {
-        font-size: 0.9em;
-        color: #555;
-        display: block;
-        margin-bottom: 2px;
-    }
-    .nippo-info-item .readonly-val {
-        font-size: 1.1em;
-        font-weight: bold;
-        color: #2c3e50;
-        line-height: 28px;
-        padding-bottom: 2px;
-    }
-    .stamp-area {
-        display: flex;
-        gap: 10px;
-    }
-    .stamp-box {
-        width: 70px;
-        height: 70px;
-        border: 1px solid #333;
-        background: white;
-        display: flex;
-        flex-direction: column;
-    }
-    .stamp-title {
-        font-size: 0.65em;
-        text-align: center;
-        border-bottom: 1px solid #333;
-        padding: 2px 0;
-        line-height: 1.1;
-    }
-    .stamp-mark {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #e0e0e0;
-        font-size: 1.8em;
-    }
-    .nippo-body-flex {
-        display: flex;
-        gap: 20px;
-        align-items: flex-start;
-    }
-    .inspection-section {
-        width: 280px;
-        flex-shrink: 0;
-    }
-    .inspection-title {
-        font-weight: bold;
-        margin-bottom: 8px;
-        font-size: 1.05em;
-        color: #2c3e50;
-        padding-left: 0;
-    }
-    .inspection-table td {
-        text-align: left;
-        padding: 4px 8px;
-    }
-
-    /* 事故記録簿用のスタイル */
-    .jiko-page {
-        max-width: 210mm;
-        margin: 0 auto;
-        background: white;
-        padding: 10px 20px;
-        box-sizing: border-box;
-        color: #000;
-        position: relative; /* 右上配置の基準 */
-    }
-    .jiko-title { 
-        text-align: center; 
-        font-size: 1.5em; 
-        border-bottom: 2px solid #333; 
-        padding-bottom: 8px; 
-        margin-bottom: 10px; 
-        letter-spacing: 2px; 
-        font-weight: bold; 
-    }
-    .jiko-header-info { 
-        position: absolute;
-        top: 10px;
-        right: 20px;
-    }
-    .jiko-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 0.85em; table-layout: fixed; }
-    .jiko-table th, .jiko-table td { border: 1px solid #000; padding: 6px; vertical-align: middle; }
-    .jiko-table th { background-color: #f4f4f4; text-align: center; font-weight: normal; color: #000; }
-    .jiko-input { width: 95%; border: none; background: transparent; font-size: 1em; outline: none; border-bottom: 1px dotted #999; }
-    
-    .jiko-input-short { 
-        width: 1.5em; 
-        padding: 0;
-        margin: 0 1px;
-        box-sizing: border-box;
-        border: none; 
-        border-bottom: 1px dotted #999; 
-        text-align: center; 
-        outline: none; 
-        background: transparent; 
-        display: inline-block;
-    }
-    
-    .jiko-textarea { width: 95%; border: none; background: transparent; font-size: 1em; outline: none; resize: none; overflow: hidden; }
-    .jiko-footer { font-size: 0.75em; text-align: left; margin-top: 5px; line-height: 1.4; }
-
-    @media print {
-        @page { size: landscape; margin: 10mm; }
-        body { background: white; margin: 0; padding: 0; }
-        .header, .btn-back, .menu-buttons, #overlay, .print-btn-area, .btn-top-exit, 
-        #view-tenko button, #view-create-tenko button, #view-shijisho button, #view-jiko button { 
-            display: none !important; 
-        }
-        .container { 
-            box-shadow: none; 
-            margin: 0; 
-            padding: 0; 
-            max-width: 100%; 
-            width: 100%; 
-        }
-        .view { display: none; }
-        .view.active { display: block; }
-        table { font-size: 0.75em; width: 100%; }
-        input, select, textarea { border: none; background: transparent; outline: none; }
-        input[type="date"] { display: none; }
-
-        .nippo-page, .shijisho-page { 
-            page-break-after: always; 
-            margin-bottom: 0;
-        }
-        .nippo-page:last-child, .shijisho-page:last-child { 
-            page-break-after: auto; 
-        }
-
-        @page jiko { size: A4 portrait; margin: 10mm; }
-        .jiko-page { page: jiko; padding: 0; width: 100%; max-width: 100%; }
-        .jiko-input, .jiko-input-short { border-bottom: none; }
-    }
-
-    #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-    .btn-start { background-color: #2c3e50; font-size: 1.5em; padding: 20px 40px; border-radius: 10px; color: white; border: none; cursor: pointer; }
-
-    .btn-create-submit {
-        background-color: #27ae60;
-        color: white;
-        padding: 15px 40px;
-        font-size: 1.2em;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: bold;
-        box-shadow: 0 4px 10px rgba(39, 174, 96, 0.3);
-    }
-    .btn-create-nippo {
-        background-color: #3498db;
-        color: white;
-        padding: 15px 40px;
-        font-size: 1.2em;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: bold;
-        box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);
-    }
-    .btn-clear {
-        background-color: #95a5a6;
-        color: white;
-        padding: 15px 40px;
-        font-size: 1.2em;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: bold;
-        box-shadow: 0 4px 10px rgba(149, 165, 166, 0.3);
-    }
-    .date-label-display {
-        font-weight: bold;
-        margin-right: 5px;
-        color: #2c3e50;
-    }
-
-    .cir{display:inline-block;border:1px solid #000;border-radius:50%;min-width:1.5em;height:1.5em;line-height:1.5em;text-align:center;margin:-.25em -.25em;padding:0 .15em;box-sizing:border-box}
-    #fit{zoom:var(--z,1)}
-    @media print{ #fit{zoom:1} }
 </style>
 </head>
 <body>
-<div id="fit">
-<div class="header"><h1 class="main-title">乗務日報</h1></div>
-<div class="container">
-    <div id="view-nippo" class="view active">
-        <button class="btn-back" onclick="location.href='index.html'">戻る</button>
-        <div id="nippo-container"></div>
-        <div class="print-btn-area" style="text-align: right; margin-top: 20px;"><button style="background: #2c3e50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;" onclick="window.print()">印刷する</button></div>
-    </div>
-</div>
-</div>
+<div class="toolbar"><button class="back" onclick="location.href='index.html'">戻る</button><button onclick="window.print()">印刷する</button></div>
+<div id="fit"><div class="sheet" id="sheet"></div></div>
+
 <script>
 "use strict";
+// 運転日報アプリ(index.html)が端末に保存した今回の記録だけを転記する
 let S = {rows:[]};
 try{ S = JSON.parse(localStorage.getItem("unten-nippo-v1")) || S; }catch(e){}
 const rows = S.rows || [];
 const esc = v => String(v==null ? "" : v).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hm = t => t ? String(t).slice(11,16) : "";
-const num = v => /^\d+$/.test(String(v)) ? Number(v) : null;
 const cir = t => `<span class="cir">${t}</span>`;
 const WD = ["日","月","火","水","木","金","土"];
 const first = k => rows.find(r=>r.kind===k);
@@ -338,9 +87,9 @@ const t0 = (start || rows[0] || {}).time;
 let dateStr = "";
 if(t0){ const d = new Date(t0.slice(0,10)+"T00:00:00");
   dateStr = `${d.getFullYear()}年${String(d.getMonth()+1).padStart(2,"0")}月${String(d.getDate()).padStart(2,"0")}日 (${WD[d.getDay()]})`; }
-const o1 = kosei ? num(kosei.odo) : null, o2 = kiko ? num(kiko.odo) : null;
-const dist = (o1!==null && o2!==null) ? String(o2-o1) : "";
-// 出発→到着の1組ごと。帰庫で終わる組は回送とみなす
+const veh = S.vehicle || "";
+
+// 出発→到着の1組ごと。帰庫で終わる組(出発→帰庫)は回送とみなす
 const legs = []; let cur = null;
 rows.forEach(r=>{
   if(r.kind==="乗務開始" || r.kind==="出発") cur = r;
@@ -349,133 +98,73 @@ rows.forEach(r=>{
   }
 });
 const fuels = rows.filter(r=>r.kind==="給油");
-const legRows = Array.from({length:Math.max(5, legs.length)}, (_,i)=>{
+
+const CHECK = ["エンジン（かかり具合・異音）","ブレーキ（踏みしろ・きき具合）","パーキングブレーキ（ひきしろ）","ワイパー（消耗具合）",
+  "ウィンドウォッシャー液","方向指示器","ブレーキオイル","ラジエータ・ファンベルト","エンジンオイル・バッテリー","ライト類",
+  "タイヤ（空気圧・消耗・溝）","スペアタイヤ","非常信号用具","車検証"];
+const stamp = t => `<div class="stamp"><div class="t">${t}</div><div class="m">印</div></div>`;
+const yn = t => `<div><span>${t}</span><span>有・${cir("無")}</span></div>`;
+
+const runRows = Array.from({length:Math.max(10, legs.length)}, (_,i)=>{
   const L = legs[i];
-  const kind = L ? `${L.type==="回送"?cir("回送"):"回送"}・${L.type==="実車"?cir("実車"):"実車"}　` : "";
-  const route = L ? `${esc((L.dep&&L.dep.addr)||"")} → ${esc(L.arr.addr||"")}` : "";
-  return `<tr><td style="height: 38px;"></td><td>${L&&L.dep?hm(L.dep.time):""}</td><td style="position: relative;">${kind}${route}<span style="position: absolute; bottom: 2px; right: 4px; font-size: 0.7em; color: #333;">□　運行指示書と同じ</span></td><td>${L?hm(L.arr.time):""}</td><td></td></tr>`;
+  const k = L ? `${L.type==="回送"?cir("回送"):"回送"}・${L.type==="実車"?cir("実車"):"実車"}` : "回送・実車";
+  return `<tr><td>${k}</td><td>${L&&L.dep?esc(L.dep.addr||""):""}</td><td>${L&&L.dep?hm(L.dep.time):""}</td>
+    <td>${L?esc(L.arr.addr||""):""}</td><td>${L?hm(L.arr.time):""}</td><td>${L?esc(L.arr.odo):""}</td><td></td></tr>`;
 }).join("");
 const ZEN = ["１","２","３","４","５","６","７","８","９"];
 const fuelRows = Array.from({length:Math.max(2, fuels.length)}, (_,i)=>{
   const f = fuels[i];
-  return `<tr><th style="height: 30px;">${ZEN[i]||(i+1)}回目</th><td>${f?esc(f.odo):""}</td><td>${f?esc(f.fuel):""}</td></tr>`;
+  return `<tr><th>${ZEN[i]||(i+1)}回目</th><td>${f?esc(f.odo):""}</td><td>${f?esc(f.fuel):""}</td></tr>`;
 }).join("");
-const v = {name:"", number:S.vehicle||""}, i = 0;
-document.getElementById("nippo-container").innerHTML = `
-        <div class="nippo-page">
-            <h2 style="text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; margin-top: 0;">乗務日報（運転記録）${v.name ? " - " + v.name : ""}</h2>
-            
-            <div class="nippo-header-flex">
-                <div class="nippo-info-row">
-                    <div class="nippo-info-item" style="width: 140px;">
-                        <div class="nippo-date-display" style="height: 28px; background: white; display: flex; align-items: center; justify-content: center; font-size: 0.9em; font-weight: bold; color: #2c3e50;">${esc(dateStr)}</div>
-                    </div>
-                    <div class="nippo-info-item" style="width: 100px;">
-                        <label>車両名</label>
-                        <div class="readonly-val">${v.name}</div>
-                    </div>
-                    <div class="nippo-info-item" style="width: 140px;">
-                        <label>車両番号</label>
-                        <div class="readonly-val">${v.number}</div>
-                    </div>
-                    <div class="nippo-info-item" style="width: 200px;">
-                        <label>運転者氏名</label>
-                        <input type="text" class="nippo-driver-input" data-vehicle-index="${i}" value="${esc(S.driver||'')}" style="width: 100%; box-sizing: border-box; height: 28px;">
-                    </div>
-                </div>
-            </div>
+const restRows = [0,1,2].map(()=>`<tr><td>：　　〜　　：</td><td></td></tr>`).join("");
 
-            <div class="nippo-body-flex">
-                <div class="inspection-section">
-                    <div style="margin-bottom: 15px;">
-                        <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.05em; color: #2c3e50;">業務開始時刻</div>
-                        <div style="border: 1px solid #7f8c8d; height: 35px; background: white; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold;">${hm(start&&start.time)}</div>
-                    </div>
-                    <div class="inspection-title">乗務前点検・点呼の実施状況</div>
-                    <table class="inspection-table" style="width: 100%; font-size: 0.85em;">
-                        <tbody>
-                            <tr><td>エンジン（かかり具合・異音）</td><td style="width: 40px;">◯</td></tr>
-                            <tr><td>ブレーキ（踏みしろ・きき具合）</td><td>◯</td></tr>
-                            <tr><td>パーキングブレーキ（ひきしろ）</td><td>◯</td></tr>
-                            <tr><td>ワイパー（消耗具合）</td><td>◯</td></tr>
-                            <tr><td>ウィンドウォッシャー液</td><td>◯</td></tr>
-                            <tr><td>方向指示器</td><td>◯</td></tr>
-                            <tr><td>ブレーキオイル</td><td>◯</td></tr>
-                            <tr><td>ラジエータ・ファンベルト</td><td>◯</td></tr>
-                            <tr><td>エンジンオイル・バッテリー</td><td>◯</td></tr>
-                            <tr><td>ライト類</td><td>◯</td></tr>
-                            <tr><td>タイヤ（空気圧・消耗・溝）</td><td>◯</td></tr>
-                            <tr><td>スペアタイヤ</td><td>◯</td></tr>
-                            <tr><td>非常信号用具</td><td>◯</td></tr>
-                            <tr><td>車検証</td><td>◯</td></tr>
-                        </tbody>
-                    </table>
-                    <div class="stamp-area" style="margin-top: 15px; justify-content: center; gap: 20px;">
-                        <div class="stamp-box"><div class="stamp-title">運行管理者<br>（補助者）</div><div class="stamp-mark">印</div></div>
-                        <div class="stamp-box"><div class="stamp-title">整備管理者<br>（補助者）</div><div class="stamp-mark">印</div></div>
-                    </div>
-                </div>
-                <div style="flex-grow: 1;">
-                    <table style="width: 100%; margin-bottom: 15px;">
-                        <thead>
-                            <tr>
-                                <th style="width: 12%;">出庫時刻</th>
-                                <th style="width: 16%;">開始時ODO</th>
-                                <th style="width: 28%;">休憩時間・場所</th>
-                                <th style="width: 12%;">帰庫時刻</th>
-                                <th style="width: 16%;">帰庫時ODO</th>
-                                <th style="width: 16%;">乗務中走行距離</th>
-                            </tr>
-                        </thead>
-                        <tbody><tr><td style="height: 50px;">${hm(kosei&&kosei.time)}</td><td>${esc(kosei?kosei.odo:"")}</td><td></td><td>${hm(kiko&&kiko.time)}</td><td>${esc(kiko?kiko.odo:"")}</td><td>${dist}</td></tr></tbody>
-                    </table>
-                    <div style="font-weight: bold; margin-bottom: 5px; font-size: 1.0em; color: #2c3e50;">乗客の運送状況</div>
-                    <table style="width: 100%;">
-                        <thead>
-                            <tr>
-                                <th style="width: 17%;">お客様名（または番号）</th>
-                                <th style="width: 9%;">乗車時刻</th>
-                                <th style="width: 49%;">出発地〜主な経由地〜目的地</th>
-                                <th style="width: 9%;">到着時刻</th>
-                                <th style="width: 16%;">運賃・料金の総額</th>
-                            </tr>
-                        </thead>
-                        <tbody>${legRows}</tbody>
-                    </table>
-                    <div style="display: flex; gap: 20px; align-items: stretch; margin-top: 15px;">
-                        <div style="width: 33%; display: flex; flex-direction: column;">
-                            <div style="font-weight: bold; margin-bottom: 5px; font-size: 1.0em; color: #2c3e50;">給油</div>
-                            <table style="width: 100%; margin-bottom: auto;">
-                                <tr><td style="width: 33%; background: linear-gradient(to top right, transparent 49.5%, #bdc3c7 49.5%, #bdc3c7 50.5%, transparent 50.5%); height: 30px;"></td><th style="width: 33%;">走行距離</th><th style="width: 33%;">給油量</th></tr>
-                                ${fuelRows}
-                            </table>
-                            <div style="margin-top: 10px;">
-                                <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.05em; color: #2c3e50;">業務終了時刻</div>
-                                <div style="border: 1px solid #7f8c8d; height: 35px; background: white; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold;">${hm(kiko&&kiko.time)}</div>
-                            </div>
-                        </div>
-                        <div style="width: 33%; display: flex; flex-direction: column;">
-                            <div style="font-weight: bold; margin-bottom: 5px; font-size: 1.0em; color: #2c3e50;">業務後点呼の状況</div>
-                            <table style="width: 100%; margin-bottom: 10px;">
-                                <tbody>
-                                    <tr><td style="width: 50%; padding: 4px 10px;"><div style="display: flex; justify-content: space-between;"><span>車両の異常</span><span>有・${cir("無")}</span></div></td><td style="width: 50%; padding: 4px 10px; white-space: nowrap;"><div style="display: flex; justify-content: space-between;"><span>交通事故</span><span>有・${cir("無")}</span></div></td></tr>
-                                    <tr><td style="padding: 4px 10px;"><div style="display: flex; justify-content: space-between;"><span>忘れ物等</span><span>有・${cir("無")}</span></div></td><td style="padding: 4px 10px; white-space: nowrap;"><div style="display: flex; justify-content: space-between; align-items: center;"><span>体調の異常</span><span>有・${cir("無")}</span></div></td></tr>
-                                </tbody>
-                            </table>
-                            <div style="border: 1px solid #bdc3c7; background: white; border-radius: 4px; width: 100%; padding: 4px; box-sizing: border-box; flex-grow: 1;">
-                                <span style="font-size: 0.85em; font-weight: bold; color: #2c3e50;">報告事項（事故・忘れ物等）</span>
-                            </div>
-                        </div>
-                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 5px;">
-                            <div class="stamp-box" style="margin-bottom: 5px;"><div class="stamp-title">運行管理者<br>（補助者）</div><div class="stamp-mark">印</div></div>
-                            <div style="font-size: 0.7em; color: #333; text-align: center; white-space: nowrap;">□　アルコール検知器による検知無し</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-// 画面幅に合わせて縮小表示(印刷時は等倍)
-function fit(){ document.getElementById("fit").style.setProperty("--z", Math.min(1, document.documentElement.clientWidth/1240)); }
+document.getElementById("sheet").innerHTML = `
+<h2 class="title">乗務日報（運転記録）${veh ? " - "+esc(veh) : ""}</h2>
+<div class="hd">
+  <div class="date" style="width:140px">${esc(dateStr)}</div>
+  <div class="it" style="width:94px"><label>車両名</label><div class="val">${esc(veh)}</div></div>
+  <div class="it" style="width:133px"><label>車両番号</label><div class="val"></div></div>
+  <div class="it"><label>運転者氏名</label><input type="text" value="${esc(S.driver||"")}"></div>
+</div>
+<div class="main">
+  <div class="left">
+    <div class="lbl">業務開始時刻</div><div class="box">${hm(start&&start.time)}</div>
+    <div class="lbl g">出庫時ODO</div><div class="box">${esc(kosei?kosei.odo:"")}</div>
+    <div class="lbl g">乗務前点検・点呼の実施状況</div>
+    <table class="chk">${CHECK.map(t=>`<tr><td>${t}</td><td>◯</td></tr>`).join("")}</table>
+    <div class="stamps">${stamp("運行管理者<br>（補助者）")}${stamp("整備管理者<br>（補助者）")}</div>
+  </div>
+  <div class="right">
+    <div class="lbl">運送の記録</div>
+    <table class="run"><thead><tr>
+      <th style="width:74px">回送・実車</th><th style="width:165px">出発場所</th><th style="width:120px">出発時刻</th><th style="width:165px">到着場所</th>
+      <th style="width:120px">到着時刻</th><th style="width:166px">到着時ODO</th><th>備考</th></tr></thead>
+      <tbody>${runRows}</tbody></table>
+    <div class="bottom">
+      <div class="fuel">
+        <div class="lbl">給油</div>
+        <table><tr><td class="diag" style="width:33%"></td><th style="width:33%">走行距離</th><th>給油量</th></tr>${fuelRows}</table>
+        <div class="lbl g">業務終了時刻</div><div class="box">${hm(kiko&&kiko.time)}</div>
+        <div class="lbl g">帰庫時ODO</div><div class="box">${esc(kiko?kiko.odo:"")}</div>
+      </div>
+      <div class="post">
+        <div class="lbl">業務後点呼の状況</div>
+        <table><tr><td style="width:50%">${yn("車両の異常")}</td><td>${yn("交通事故")}</td></tr>
+        <tr><td>${yn("忘れ物等")}</td><td>${yn("体調の異常")}</td></tr></table>
+        <div class="rep">報告事項（事故・忘れ物等）</div>
+      </div>
+      <div class="rest">
+        <div class="lbl">休憩</div>
+        <table><tr><th>休憩時間</th><th style="width:85px">休憩場所</th></tr>${restRows}</table>
+        ${stamp("運行管理者<br>（補助者）")}
+        <div class="alc">□　アルコール検知器による検知無し</div>
+      </div>
+    </div>
+  </div>
+</div>`;
+
+// 画面幅に合わせて縮小表示(印刷時は用紙に合わせて縮小)
+function fit(){ document.getElementById("sheet").style.setProperty("--z", Math.min(1, document.documentElement.clientWidth/1200)); }
 fit(); addEventListener("resize", fit);
 </script>
 </body>
