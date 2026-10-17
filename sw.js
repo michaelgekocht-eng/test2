@@ -1,6 +1,6 @@
 // 通信できるときは常に最新版を取得し、オフライン時や電波が弱いときは保存済みの版を使います
-const VERSION = "nippo-v21";
-const FILES = ["./","./index.html","./jsQR.js","./shijisho.html","./manifest.json",
+const VERSION = "nippo-v22";
+const FILES = ["./","./index.html","./jsQR.js","./shijisho.html","./nippo.html","./manifest.json",
   "./icon-192.png","./icon-512.png","./icon-maskable-512.png","./apple-touch-icon.png"];
 
 self.addEventListener("install", e=>{

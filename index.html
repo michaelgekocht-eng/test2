@@ -629,6 +629,7 @@ function render(){
   }else if(st==="done"){
     h = `<div class="panel"><p class="msg">お疲れ様でした。終業後点検を実施してください</p>
          <button id="post" class="alt">終業後点検</button>
+         <button id="rpt" class="alt">日報作成</button>
          <p class="note" style="margin-top:16px">今日のデータを運行管理者に共有してください</p>
          ${S.rows.some(r=>r.lat && !r.addr) ? `<p class="err">住所が未取得の行があります。通信が戻ると自動で補完されます。緯度経度は記録済みです。</p>` : ""}
          <button id="sh">共有</button>
@@ -942,6 +943,7 @@ function bind(st){
 
   if(st==="done"){
     $("post").onclick = ()=>openCheck("終業後点検", POST_ITEMS);
+    $("rpt").onclick = ()=>{ location.href = "nippo.html"; };
     $("sh").onclick = share;
     $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
   }
