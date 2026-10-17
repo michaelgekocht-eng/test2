@@ -74,6 +74,13 @@
     background:transparent;color:var(--ink);border:2px solid var(--line)}
   .micBtn.rec{background:var(--warn);color:#fff;border-color:var(--warn);animation:pulse 1s infinite}
   @keyframes pulse{50%{opacity:.6}}
+  #topR button.tiny{min-height:20px;padding:1px 7px;font-size:10px;font-weight:400;opacity:.5;border-color:transparent;color:var(--sub)}
+  .pick{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;margin-top:10px;padding:12px 14px;
+    font-size:20px;font-weight:700;background:transparent;color:var(--ink);border:2px solid var(--line)}
+  .pick .mr{font-size:12px;font-weight:400;color:var(--sub);line-height:1.3}
+  .pick.on{border-color:var(--blue);background:var(--panel);background:color-mix(in srgb, var(--blue) 14%, var(--panel))}
+  #drv{width:100%;font-size:24px;padding:12px;border:2px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin-bottom:14px}
+  #drv:focus{outline:3px solid var(--blue);border-color:var(--blue)}
   .seg{background:transparent;color:var(--ink);border:2px solid var(--line)}
   .seg.on{background:var(--go);color:var(--go-ink);border-color:var(--go)}
   .rec + .rec{margin-top:10px}
@@ -120,7 +127,20 @@
 <script>
 "use strict";
 // QRコードに入っている名前(登録済みの名前のみ受け付ける。追加するときはここに足す)
-const MANAGERS = ["中村", "内田レ", "内田ヒ"];
+const MANAGERS = [
+  {name:"中村泰輔", role:"運行管理者・整備管理補助者", alias:["中村"]},
+  {name:"内田麗子", role:"運行管理補助者・整備管理補助者", alias:["内田レ"]},
+  {name:"内田洋", role:"運行管理補助者・整備管理者", alias:["内田ヒ"]}
+];   // alias は以前のQRコード(旧表記)も読めるようにするためのもの
+function resolveManager(v){
+  const t = String(v).normalize("NFKC").trim();
+  const m = MANAGERS.find(x=>x.name===t || x.alias.includes(t));
+  return m ? m.name : null;
+}
+function mgrFromNote(note){
+  const m = MANAGERS.find(x=>note.endsWith(x.name) || x.alias.some(a=>note.endsWith(a)));
+  return m ? m.name : "";
+}
 const KEY = "unten-nippo-v1";
 const view = document.getElementById("view");
 const logEl = document.getElementById("log");
@@ -130,11 +150,11 @@ const metaEl = document.getElementById("meta");
 // step: home | inspect | scan | odoStart | arrive | depart | done
 let S = load() || fresh();
 S.rows.forEach(r=>{ if(r.kind==="違法帰庫") r.kind = "帰庫"; });
-function fresh(){ return {step:"home", rows:[], manager:"", vehicle:""}; }
+function fresh(){ return {step:"home", rows:[], manager:"", vehicle:"", driver:""}; }
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; } }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 function updateMeta(){
-  metaEl.textContent = [S.vehicle ? `車両: ${S.vehicle}` : "", S.manager ? `点呼者: ${S.manager}` : ""].filter(Boolean).join(" / ");
+  metaEl.textContent = [S.vehicle ? `車両: ${S.vehicle}` : "", S.driver ? `乗務員: ${S.driver}` : "", S.manager ? `点呼者: ${S.manager}` : ""].filter(Boolean).join(" / ");
 }
 function go(step){ S.step = step; save(); render(); }
 
@@ -236,8 +256,7 @@ async function startScan(){
     stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}, audio:false});
     video.srcObject = stream; video.setAttribute("playsinline",""); await video.play();
   }catch(e){
-    err.textContent = "カメラを使えません。下のボタンで手動選択してください。";
-    document.getElementById("manual").hidden = false;
+    err.textContent = "カメラを使えません。右上の「点」から選択してください。";
     return;
   }
   scanning = true;
@@ -251,13 +270,29 @@ async function startScan(){
       const code = window.jsQR && jsQR(img.data, img.width, img.height);
       if(code){
         const v = code.data.trim().normalize("NFKC");
-        if(MANAGERS.includes(v)){ chooseManager(v); return; }
+        const nm = resolveManager(v); if(nm){ chooseManager(nm); return; }
         err.textContent = `「${v}」は登録されていないQRコードです`;
       }
     }
     requestAnimationFrame(tick);
   };
   tick();
+}
+// 点呼者の手動選択(右上の「点」ボタン): 登録された3人から1人だけ選ぶ
+function openPick(){
+  let sel = null;
+  document.getElementById("modal").innerHTML = `<div class="mback"><div class="panel mpanel" role="dialog" aria-modal="true">
+    <p class="msg" style="font-size:20px">点呼者を選んでください</p>
+    <div role="radiogroup" aria-label="点呼者">${MANAGERS.map((m,i)=>`<button type="button" class="pick" role="radio" aria-checked="false" data-i="${i}"><span>${escH(m.name)}</span><small class="mr">（${escH(m.role)}）</small></button>`).join("")}</div>
+    <button id="pk-ok" disabled>この人で記録</button><button id="pk-no" class="ghost">キャンセル</button></div></div>`;
+  const ok = document.getElementById("pk-ok");
+  document.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{
+    sel = Number(b.dataset.i);
+    document.querySelectorAll(".pick").forEach(x=>{ const on = x===b; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); });
+    ok.disabled = false;
+  });
+  ok.onclick = ()=>{ if(sel!==null) chooseManager(MANAGERS[sel].name); };
+  document.getElementById("pk-no").onclick = ()=>{ document.getElementById("modal").innerHTML = ""; };
 }
 function chooseManager(name){
   stopCamera();
@@ -268,9 +303,9 @@ function chooseManager(name){
 
 // ---- CSV ----
 function csvText(){
-  const head = ["種別","日時","車両番号","Odoメーター","給油量(L)","緯度","経度","住所","備考"];
+  const head = ["種別","日時","車両番号","乗務員","Odoメーター","給油量(L)","緯度","経度","住所","備考"];
   const esc = v => `"${String(v??"").replace(/"/g,'""')}"`;
-  return [head, ...S.rows.map(r=>[r.kind,r.time,S.vehicle||"",r.odo,r.fuel,r.lat,r.lng,r.addr,r.note])]
+  return [head, ...S.rows.map(r=>[r.kind,r.time,S.vehicle||"",S.driver||"",r.odo,r.fuel,r.lat,r.lng,r.addr,r.note])]
     .map(a=>a.map(esc).join(",")).join("\r\n");
 }
 function csvFile(){
@@ -344,6 +379,7 @@ function place(kind, ids){
         }
       }
     }
+    if(kind==="乗務開始" || kind==="違法出庫"){ const dv = document.getElementById("drv"); if(dv) S.driver = dv.value.trim(); save(); }
     const status = document.getElementById(ids.status);
     document.querySelectorAll("button").forEach(b=>b.disabled=true);
     // 「違法帰庫」「違法出庫」ボタンは、記録上の種別は「帰庫」「乗務開始」(位置情報は取得せず固定住所)
@@ -373,7 +409,7 @@ function openCheck(title="点検表", items=CHECK_ITEMS){
 }
 // ---- 運行指示書(shijisho.html を画面いっぱいに表示。幅1100pxの紙面を画面幅に合わせて縮小し、ピンチで拡大できる) ----
 function openShijisho(){
-  const q = new URLSearchParams({embed:"1"}); if(S.vehicle) q.set("carPlate", S.vehicle);
+  const q = new URLSearchParams({embed:"1"}); if(S.vehicle) q.set("carPlate", S.vehicle); if(S.driver) q.set("driver", S.driver);
   const W = 1100, sc = Math.min(1, document.documentElement.clientWidth / W), m = document.getElementById("modal2");
   m.innerHTML = `<div class="mback" style="padding:0;background:var(--bg);display:flex;flex-direction:column;align-items:stretch">
     <div class="shbar">
@@ -525,6 +561,7 @@ function renderTop(){
                  : '<div class="tr"><button id="mrg">データの合体</button></div>') : "";
   top.innerHTML = ((st==="arrive"||st==="depart") ? '<div class="tr"><button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button></div><div class="tr"><button id="shj">運行指示書</button><button id="fuel">給油</button></div>'
                 : st==="odoStart" ? '<div class="tr"><button id="deg">違法出庫</button></div>'
+                : st==="scan" ? '<div class="tr"><button id="pt" class="tiny" aria-label="手動で選択">点</button></div>'
                 : st==="done" ? '<div class="tr"><button id="dl">CSVをダウンロード</button></div>' : "") + mrg
     + ((st==="odoStart"||st==="arrive"||st==="depart"||st==="fuel") ? `<div class="tr"><button id="vl" class="vlBtn">${vLabelFull()}</button></div>` : "");
   const $$ = id => document.getElementById(id);
@@ -536,6 +573,7 @@ function renderTop(){
   }
   if(st==="odoStart") $$("deg").onclick = place("違法出庫");
   if(st==="done") $$("dl").onclick = download;
+  if(st==="scan") $$("pt").onclick = openPick;
   if($$("mrg")) $$("mrg").onclick = ()=>{ mergeMode = true; mergeSel = []; editIdx = null; insPos = null; insMode = null; renderTop(); renderLog(); };
   if($$("mrgX")){
     $$("mrgX").onclick = ()=>{ mergeMode = false; mergeSel = []; renderTop(); renderLog(); };
@@ -564,12 +602,11 @@ function render(){
   }else if(st==="scan"){
     h = `<div class="panel"><p class="msg">点呼を受けてください</p>
          <p class="note">運行管理者・整備管理者(補助者)のQRコードを読み取ってください。</p>
-         <video id="cam" muted></video><p class="err" id="err"></p>
-         <div id="manual" hidden><div class="row">
-           ${MANAGERS.map(m=>`<button class="ghost" data-m="${m}">${m}</button>`).join("")}
-         </div></div></div>`;
+         <video id="cam" muted></video><p class="err" id="err"></p></div>`;
   }else if(st==="odoStart"){
     h = `<div class="panel"><p class="msg">乗務を開始してください</p>
+         <label for="drv">乗務員名</label>
+         <input id="drv" type="text" autocomplete="name" placeholder="氏名" value="${escH(S.driver||"")}">
          ${odoInput("開始時Odoメーターを記録してください")}
          <p class="err" id="err"></p><p class="status" id="status"></p><button id="begin">乗務開始</button></div>`;
   }else if(st==="arrive"){
@@ -621,10 +658,12 @@ function editForm(r){
       <label for="e-lng">経度</label><input id="e-lng" type="text" inputmode="decimal" value="${escH(r.lng)}">`;
   if(r.kind==="業務開始")
     f += `<label for="e-veh">担当車の番号</label><input id="e-veh" type="number" inputmode="numeric" min="0" step="1" value="${escH(S.vehicle||"")}">`;
+  if(r.kind==="乗務開始")
+    f += `<label for="e-drv">乗務員名</label><input id="e-drv" type="text" value="${escH(S.driver||"")}">`;
   if(r.kind==="出発点呼"){
-    const cur = Object.values(MANAGERS).find(m=>r.note.endsWith(m)) || "";
+    const cur = mgrFromNote(r.note);
     f += `<label for="e-mgr">運行管理者・整備管理者(補助者)</label><select id="e-mgr">
-      ${Object.values(MANAGERS).map(m=>`<option${m===cur?" selected":""}>${m}</option>`).join("")}</select>`;
+      ${MANAGERS.map(m=>`<option value="${m.name}"${m.name===cur?" selected":""}>${m.name}（${m.role}）</option>`).join("")}</select>`;
   }else{
     f += `<label for="e-note">備考</label><input id="e-note" type="text" value="${escH(r.note)}">`;
   }
@@ -778,7 +817,7 @@ function deleteRow(i){
   if(!confirm(`次の記録を消去します。よろしいですか？\n${list}`)) return;
   S.rows = S.rows.filter((_,j)=>!idx.includes(j));
   const m = S.rows.slice().reverse().find(r=>r.kind==="出発点呼");
-  S.manager = m ? (Object.values(MANAGERS).find(x=>m.note.endsWith(x)) || "") : "";
+  S.manager = m ? mgrFromNote(m.note) : "";
   let li = S.rows.length-1; while(li>=0 && S.rows[li].kind==="給油") li--;
   const last = S.rows[li];
   S.step = last ? (STEP_AFTER[last.kind] || "arrive") : "home";
@@ -868,6 +907,7 @@ function saveEdit(i){
     if(!/^\d+$/.test(vv)){ err.textContent = "担当車の番号を数値で入力してください"; return; }
     S.vehicle = vv;
   }
+  if(r.kind==="乗務開始") S.driver = g("e-drv").value.trim();
   r.time = t; r.odo = odo; r.lat = lat; r.lng = lng; r.addr = addr;
   if(r.kind==="出発点呼"){
     const m = g("e-mgr").value; r.note = `運行管理者・整備管理者(補助者): ${m}`; S.manager = m;
@@ -889,10 +929,12 @@ function bind(st){
     $("chk").onclick = ()=>openCheck();
   }
   if(st==="scan"){
-    view.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>chooseManager(b.dataset.m));
     startScan();
   }
-  if(st==="odoStart") $("begin").onclick = place("乗務開始");
+  if(st==="odoStart"){
+    $("drv").oninput = ()=>{ S.driver = $("drv").value.trim(); save(); updateMeta(); };
+    $("begin").onclick = place("乗務開始");
+  }
   if(st==="arrive"){
     $("kaiso").onclick = place("回送で到着");
     $("jissha").onclick = place("実車で到着");
