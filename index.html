@@ -80,6 +80,7 @@
   .pick .mr{font-size:12px;font-weight:400;color:var(--sub);line-height:1.3}
   .pick.on{border-color:var(--blue);background:var(--panel);background:color-mix(in srgb, var(--blue) 14%, var(--panel))}
   #drv{width:100%;font-size:24px;padding:12px;border:2px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin-bottom:14px}
+  #veh2{margin-bottom:14px}
   #drv:focus{outline:3px solid var(--blue);border-color:var(--blue)}
   .seg{background:transparent;color:var(--ink);border:2px solid var(--line)}
   .seg.on{background:var(--go);color:var(--go-ink);border-color:var(--go)}
@@ -256,7 +257,6 @@ async function startScan(){
     stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}, audio:false});
     video.srcObject = stream; video.setAttribute("playsinline",""); await video.play();
   }catch(e){
-    err.textContent = "カメラを使えません。右上の「点」から選択してください。";
     return;
   }
   scanning = true;
@@ -379,7 +379,8 @@ function place(kind, ids){
         }
       }
     }
-    if(kind==="乗務開始" || kind==="違法出庫"){ const dv = document.getElementById("drv"); if(dv) S.driver = dv.value.trim(); save(); }
+    if(kind==="乗務開始" || kind==="違法出庫"){ const dv = document.getElementById("drv"); if(dv) S.driver = dv.value.trim();
+      const vv = document.getElementById("veh2"); if(vv && /^\d+$/.test(vv.value.trim())) S.vehicle = vv.value.trim(); save(); }
     const status = document.getElementById(ids.status);
     document.querySelectorAll("button").forEach(b=>b.disabled=true);
     // 「違法帰庫」「違法出庫」ボタンは、記録上の種別は「帰庫」「乗務開始」(位置情報は取得せず固定住所)
@@ -605,8 +606,11 @@ function render(){
          <video id="cam" muted></video><p class="err" id="err"></p></div>`;
   }else if(st==="odoStart"){
     h = `<div class="panel"><p class="msg">乗務を開始してください</p>
-         <label for="drv">乗務員名</label>
-         <input id="drv" type="text" autocomplete="name" placeholder="氏名" value="${escH(S.driver||"")}">
+         <p class="note" style="font-size:17px;font-weight:700;color:var(--ink)">自身のフルネームと本日の担当者を入力してください</p>
+         <label for="drv">氏名</label>
+         <input id="drv" type="text" autocomplete="name" placeholder="例: 山田 太郎" value="${escH(S.driver||"")}">
+         <label for="veh2">担当車</label>
+         <input id="veh2" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 12" value="${escH(S.vehicle||"")}">
          ${odoInput("開始時Odoメーターを記録してください")}
          <p class="err" id="err"></p><p class="status" id="status"></p><button id="begin">乗務開始</button></div>`;
   }else if(st==="arrive"){
@@ -933,6 +937,7 @@ function bind(st){
   }
   if(st==="odoStart"){
     $("drv").oninput = ()=>{ S.driver = $("drv").value.trim(); save(); updateMeta(); };
+    $("veh2").oninput = ()=>{ const v = $("veh2").value.trim(); if(/^\d+$/.test(v)){ S.vehicle = v; save(); updateMeta(); } };
     $("begin").onclick = place("乗務開始");
   }
   if(st==="arrive"){
