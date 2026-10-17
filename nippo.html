@@ -33,7 +33,8 @@
     .chk td{overflow:hidden}
     .run{font-size:11px}
     .run th,.run td{height:25px;padding:0 3px}
-    .stamps{display:flex;justify-content:center;gap:19px;margin-top:19px}
+    .stamps{display:flex;justify-content:center;gap:19px;margin-top:19px;position:relative}
+    .seal{position:absolute;top:0;left:50%;width:67px;height:67px;transform:translateX(-50%);object-fit:cover;pointer-events:none}
     .stamp{width:67px;height:67px;border:1px solid #333;background:#fff;display:flex;flex-direction:column}
     .stamp .t{font-size:8px;text-align:center;border-bottom:1px solid #333;padding:2px 0;line-height:1.1;color:#222}
     .stamp .m{flex:1;display:flex;align-items:center;justify-content:center;color:#e0e0e0;font-size:28px}
@@ -99,6 +100,12 @@ rows.forEach(r=>{
 });
 const fuels = rows.filter(r=>r.kind==="給油");
 
+// 始業点呼を実施した運行管理者のしるし(画像)を、左下の2つの押印マスにまたがって貼る
+const MGR = ["中村泰輔","内田麗子","内田洋"];
+let mgr = S.manager || "";
+if(!MGR.includes(mgr)){ const r0 = last("出発点呼"); mgr = (r0 && MGR.find(n=>String(r0.note||"").endsWith(n))) || ""; }
+const seal = mgr ? `<img class="seal" src="${encodeURIComponent(mgr)}.png" alt="${esc(mgr)}">` : "";
+
 const CHECK = ["エンジン（かかり具合・異音）","ブレーキ（踏みしろ・きき具合）","パーキングブレーキ（ひきしろ）","ワイパー（消耗具合）",
   "ウィンドウォッシャー液","方向指示器","ブレーキオイル","ラジエータ・ファンベルト","エンジンオイル・バッテリー","ライト類",
   "タイヤ（空気圧・消耗・溝）","スペアタイヤ","非常信号用具","車検証"];
@@ -132,7 +139,7 @@ document.getElementById("sheet").innerHTML = `
     <div class="lbl g">出庫時ODO</div><div class="box">${esc(kosei?kosei.odo:"")}</div>
     <div class="lbl g">乗務前点検・点呼の実施状況</div>
     <table class="chk">${CHECK.map(t=>`<tr><td>${t}</td><td>◯</td></tr>`).join("")}</table>
-    <div class="stamps">${stamp("運行管理者<br>（補助者）")}${stamp("整備管理者<br>（補助者）")}</div>
+    <div class="stamps">${stamp("運行管理者<br>（補助者）")}${stamp("整備管理者<br>（補助者）")}${seal}</div>
   </div>
   <div class="right">
     <div class="lbl">運送の記録</div>

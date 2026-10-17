@@ -1,10 +1,15 @@
 // 通信できるときは常に最新版を取得し、オフライン時や電波が弱いときは保存済みの版を使います
-const VERSION = "nippo-v23";
+const VERSION = "nippo-v24";
 const FILES = ["./","./index.html","./jsQR.js","./shijisho.html","./nippo.html","./manifest.json",
   "./icon-192.png","./icon-512.png","./icon-maskable-512.png","./apple-touch-icon.png"];
 
+const SEALS = ["./中村泰輔.png","./内田麗子.png","./内田洋.png"];
+
 self.addEventListener("install", e=>{
-  e.waitUntil(caches.open(VERSION).then(c=>c.addAll(FILES.map(f=>new Request(f,{cache:"reload"})))).then(()=>self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(async c=>{
+    await c.addAll(FILES.map(f=>new Request(f,{cache:"reload"})));
+    await Promise.allSettled(SEALS.map(f=>c.add(f)));   // しるし画像(未配置でも本体の保存は止めない)
+  }).then(()=>self.skipWaiting()));
 });
 self.addEventListener("activate", e=>{
   e.waitUntil(caches.keys()
