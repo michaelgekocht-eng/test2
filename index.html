@@ -316,12 +316,86 @@ function download(){
   a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
 }
-async function share(){
-  const f = csvFile();
+// ---- 日報PDF(端末内で生成。外部ライブラリ不要) ----
+// nippo.html を非表示のiframeで開き、紙面を画像化してA4横のPDFに包む
+let pdfCache = null;
+const nippoKey = () => localStorage.getItem(KEY) || "";
+const blobToDataURL = b => new Promise((ok,ng)=>{ const r=new FileReader(); r.onload=()=>ok(r.result); r.onerror=ng; r.readAsDataURL(b); });
+function loadNippoFrame(){
+  return new Promise((ok,ng)=>{
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-10000px;top:0;width:1200px;height:1800px;border:0;visibility:hidden";
+    f.onload = ()=>ok(f); f.onerror = ()=>ng(new Error("nippo load"));
+    f.src = "nippo.html"; document.body.appendChild(f);
+  });
+}
+async function nippoJpeg(){
+  const fr = await loadNippoFrame();
   try{
-    if(navigator.canShare && navigator.canShare({files:[f]})){ await navigator.share({files:[f], title:f.name}); }
-    else if(navigator.share){ await navigator.share({title:f.name, text:csvText()}); }
-    else{ download(); alert("共有に未対応の端末のためダウンロードしました"); }
+    const d = fr.contentDocument, sheet = d.getElementById("sheet");
+    sheet.style.setProperty("--z","1"); sheet.style.margin = "0"; sheet.style.padding = "0";
+    for(const im of sheet.querySelectorAll("img")){          // しるし画像を埋め込む
+      try{ const r = await fetch(im.getAttribute("src")); if(r.ok) im.setAttribute("src", await blobToDataURL(await r.blob())); }catch(e){}
+    }
+    let css = ""; d.querySelectorAll("style").forEach(st=>css += st.textContent);
+    css = css.replace(/@media print\{[\s\S]*\}\s*$/, "")
+             .replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    css += ".sheet{zoom:1!important;margin:0!important;padding:0!important}.hd input{border-color:transparent;background:transparent}";
+    const W = 1200, H = Math.ceil(sheet.getBoundingClientRect().height);
+    const inner = `<div xmlns="http://www.w3.org/1999/xhtml"><style>${css}</style>${new XMLSerializer().serializeToString(sheet)}</div>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject width="100%" height="100%">${inner}</foreignObject></svg>`;
+    const img = new Image();
+    await new Promise((ok,ng)=>{ img.onload=ok; img.onerror=()=>ng(new Error("svg")); img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); });
+    const K = 2, cv = document.createElement("canvas"); cv.width = W*K; cv.height = H*K;
+    const cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(img,0,0,cv.width,cv.height);
+    const blob = await new Promise(ok=>cv.toBlob(ok,"image/jpeg",0.92));
+    if(!blob) throw new Error("jpeg");
+    return {jpg:new Uint8Array(await blob.arrayBuffer()), pw:cv.width, ph:cv.height};
+  } finally { fr.remove(); }
+}
+function jpegToPdf({jpg,pw,ph}){
+  const PW = 842, PH = 595, M = 28.35;                       // A4横・余白10mm
+  const k = Math.min((PW-2*M)/pw, (PH-2*M)/ph), w = pw*k, h = ph*k, x = (PW-w)/2, y = PH-M-h;
+  const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
+  const put = b => { const u = typeof b==="string" ? enc.encode(b) : b; parts.push(u); len += u.length; };
+  const content = `q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q`;
+  put("%PDF-1.4\n");
+  offs[1]=len; put("1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n");
+  offs[2]=len; put("2 0 obj\n<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n");
+  offs[3]=len; put(`3 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${PW} ${PH}]/Resources<</XObject<</Im0 4 0 R>>>>/Contents 5 0 R>>\nendobj\n`);
+  offs[4]=len; put(`4 0 obj\n<</Type/XObject/Subtype/Image/Width ${pw}/Height ${ph}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ${jpg.length}>>\nstream\n`); put(jpg); put("\nendstream\nendobj\n");
+  offs[5]=len; put(`5 0 obj\n<</Length ${content.length}>>\nstream\n${content}\nendstream\nendobj\n`);
+  const xref = len;
+  put("xref\n0 6\n0000000000 65535 f \n" + [1,2,3,4,5].map(n=>String(offs[n]).padStart(10,"0")+" 00000 n \n").join("") +
+      `trailer\n<</Size 6/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts, {type:"application/pdf"});
+}
+async function makePdf(){
+  const blob = jpegToPdf(await nippoJpeg());
+  return new File([blob], `運転日報_${(S.rows[0]?.time||now()).slice(0,10)}.pdf`, {type:"application/pdf"});
+}
+// 画面表示時に先に作っておく(共有ボタン押下からの待ち時間を減らす)。記録が変われば作り直す
+function pdfFile(){
+  const key = nippoKey();
+  if(!pdfCache || pdfCache.key!==key){
+    const c = {key};
+    c.p = makePdf().catch(()=>{ if(pdfCache===c) pdfCache=null; return null; });
+    pdfCache = c;
+  }
+  return pdfCache.p;
+}
+function saveFile(f){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+// 共有ボタン1回で「日報PDF」と「元データCSV」の2ファイルを共有する
+async function share(){
+  const csv = csvFile(), pdf = await pdfFile();
+  const files = pdf ? [pdf, csv] : [csv];
+  try{
+    if(navigator.canShare && navigator.canShare({files})){ await navigator.share({files, title:"運転日報"}); }
+    else{ files.forEach((f,i)=>setTimeout(()=>saveFile(f), i*400)); alert("共有に未対応の端末のためダウンロードしました"); }
   }catch(e){ /* キャンセル */ }
 }
 
@@ -945,6 +1019,7 @@ function bind(st){
     $("post").onclick = ()=>openCheck("終業後点検", POST_ITEMS);
     $("rpt").onclick = ()=>{ location.href = "nippo.html"; };
     $("sh").onclick = share;
+    pdfFile();
     $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
   }
 }
