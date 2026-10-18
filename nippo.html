@@ -49,6 +49,10 @@
     .post table td{height:25px;padding:0 9px;font-size:11px;color:#222}
     .post td div{display:flex;justify-content:space-between}
     .rep{margin-top:9px;height:198px;border:1px solid #bdc3c7;border-radius:4px;padding:3px 4px;font-size:12px;font-weight:bold;color:#2c3e50}
+    .rep{position:relative;overflow:hidden}
+    .rep .rb{margin-top:6px;font-weight:normal;font-size:12px;line-height:1.45;color:#222;white-space:pre-wrap;word-break:break-all}
+    /* 報告事項が空のとき: 枠の右上と左下を結ぶ斜線 */
+    .rep.none{background:linear-gradient(to top left,transparent calc(50% - .75px),#555 calc(50% - .75px),#555 calc(50% + .75px),transparent calc(50% + .75px));background-origin:border-box}
     .rest{width:276px;text-align:center}
     .rest .lbl{text-align:center;margin:28px 0 7px}
     .rest table{font-size:11px}
@@ -124,6 +128,7 @@ const fuelRows = Array.from({length:Math.max(2, fuels.length)}, (_,i)=>{
   const f = fuels[i];
   return `<tr><th>${ZEN[i]||(i+1)}回目</th><td>${f?esc(f.odo):""}</td><td>${f?esc(f.fuel):""}</td></tr>`;
 }).join("");
+const reportText = String(S.report||"").trim();   // 報告事項(空なら斜線)
 // 休憩(アプリで記録した休憩時間・休憩場所)。3行に満たない分は空欄
 const rests = rows.filter(r=>r.kind==="休憩");
 const restRows = Array.from({length:Math.max(3, rests.length)}, (_,i)=>{
@@ -165,7 +170,7 @@ document.getElementById("sheet").innerHTML = `
         <div class="lbl">業務後点呼の状況</div>
         <table><tr><td style="width:50%">${yn("車両の異常")}</td><td>${yn("交通事故")}</td></tr>
         <tr><td>${yn("忘れ物等")}</td><td>${yn("体調の異常")}</td></tr></table>
-        <div class="rep">報告事項（事故・忘れ物等）</div>
+        <div class="rep${reportText ? "" : " none"}"><div class="rt">報告事項（事故・忘れ物等）</div>${reportText ? `<div class="rb">${esc(reportText)}</div>` : ""}</div>
       </div>
       <div class="rest">
         <div class="lbl">休憩</div>
@@ -176,6 +181,11 @@ document.getElementById("sheet").innerHTML = `
     </div>
   </div>
 </div>`;
+
+// 報告事項が枠に収まらないときは文字を小さくして全文を載せる
+(function(){ const box = document.querySelector(".rep"), rb = box && box.querySelector(".rb");
+  if(!rb) return; let fs = 12;
+  while(box.scrollHeight > box.clientHeight + 1 && fs > 6){ fs -= 0.5; rb.style.fontSize = fs + "px"; } })();
 
 // 画面幅に合わせて縮小表示(印刷時は用紙に合わせて縮小)
 function fit(){ document.getElementById("sheet").style.setProperty("--z", Math.min(1, document.documentElement.clientWidth/1200)); }

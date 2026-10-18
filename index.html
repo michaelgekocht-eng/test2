@@ -44,6 +44,8 @@
   button{width:100%;font:inherit;font-size:22px;font-weight:700;padding:18px;border:0;border-radius:10px;
     background:var(--go);color:var(--go-ink);cursor:pointer;margin-top:12px}
   button.alt{background:var(--blue);color:#fff}
+  textarea{width:100%;font:inherit;font-size:18px;padding:12px;border:2px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical;min-height:140px}
+  textarea:focus{outline:3px solid var(--blue);border-color:var(--blue)}
   button.ghost{background:transparent;color:var(--ink);border:2px solid var(--line);font-size:18px;padding:12px}
   button:disabled{opacity:.45;cursor:wait}
   button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
@@ -151,7 +153,7 @@ const metaEl = document.getElementById("meta");
 // step: home | inspect | scan | odoStart | arrive | depart | done
 let S = load() || fresh();
 S.rows.forEach(r=>{ if(r.kind==="違法帰庫") r.kind = "帰庫"; });
-function fresh(){ return {step:"home", rows:[], manager:"", vehicle:"", driver:""}; }
+function fresh(){ return {step:"home", rows:[], manager:"", vehicle:"", driver:"", report:"", reportTime:""}; }
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; } }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 function updateMeta(){
@@ -305,7 +307,9 @@ function chooseManager(name){
 function csvText(){
   const head = ["種別","日時","車両番号","乗務員","Odoメーター","給油量(L)","緯度","経度","住所","備考","終了日時"];
   const esc = v => `"${String(v??"").replace(/"/g,'""')}"`;
-  return [head, ...S.rows.map(r=>[r.kind,r.time,S.vehicle||"",S.driver||"",r.odo,r.fuel,r.lat,r.lng,r.addr,r.note,r.end])]
+  const rep = (S.report||"").trim();   // 報告事項は入力があるときだけ最後の行に付ける
+  const extra = rep ? [["報告事項", S.reportTime || (S.rows[S.rows.length-1]||{}).time || now(), S.vehicle||"", S.driver||"", "", "", "", "", "", rep, ""]] : [];
+  return [head, ...S.rows.map(r=>[r.kind,r.time,S.vehicle||"",S.driver||"",r.odo,r.fuel,r.lat,r.lng,r.addr,r.note,r.end]), ...extra]
     .map(a=>a.map(esc).join(",")).join("\r\n");
 }
 function csvFile(){
@@ -705,6 +709,10 @@ function render(){
   }else if(st==="done"){
     h = `<div class="panel"><p class="msg">お疲れ様でした。終業後点検を実施してください</p>
          <button id="post" class="alt">終業後点検</button>
+         <button id="rep" class="alt">報告事項${(S.report||"").trim() ? "(入力済)" : ""}</button>
+         ${reportOpen ? `<div class="panel" style="margin:12px 0 0"><label for="rep-t">報告事項(事故・忘れ物等)</label>
+           <textarea id="rep-t" rows="6" placeholder="なければ空欄のまま閉じてください">${escH(S.report||"")}</textarea>
+           <button id="rep-close" class="ghost">閉じる</button></div>` : ""}
          <button id="rpt" class="alt">日報作成</button>
          <p class="note" style="margin-top:16px">今日のデータを運行管理者に共有してください</p>
          ${S.rows.some(r=>r.lat && !r.addr) ? `<p class="err">住所が未取得の行があります。通信が戻ると自動で補完されます。緯度経度は記録済みです。</p>` : ""}
@@ -718,6 +726,7 @@ function render(){
 const EDITABLE = ["業務開始","日常点検","出発点呼","乗務開始","出発","回送で到着","実車で到着","帰庫","給油","休憩"];
 const HAS_ODO = ["乗務開始","回送で到着","実車で到着","帰庫","給油"];
 const HAS_PLACE = ["乗務開始","出発","回送で到着","実車で到着","帰庫","給油"];
+let reportOpen = false;
 let editIdx = null, insPos = null, insMode = null, mergeMode = false, mergeSel = [];
 const escH = v => String(v??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -1060,8 +1069,15 @@ function bind(st){
     $("post").onclick = ()=>openCheck("終業後点検", POST_ITEMS);
     $("rpt").onclick = ()=>{ location.href = "nippo.html"; };
     $("sh").onclick = share;
+    $("rep").onclick = ()=>{ reportOpen = !reportOpen; render(); if(reportOpen){ const t = $("rep-t"); t.focus(); t.scrollIntoView({block:"center", behavior:"smooth"}); } };
+    if(reportOpen){
+      const t = $("rep-t"); let timer = null;
+      t.oninput = ()=>{ S.report = t.value; S.reportTime = t.value.trim() ? now() : ""; save();
+        clearTimeout(timer); timer = setTimeout(pdfFile, 800); };   // 入力が止まったらPDFを作り直しておく
+      $("rep-close").onclick = ()=>{ reportOpen = false; render(); };
+    }
     pdfFile();
-    $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); save(); render(); } };
+    $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); reportOpen=false; save(); render(); } };
   }
 }
 
@@ -1078,7 +1094,7 @@ async function resolvePending(){
     await new Promise(ok=>setTimeout(ok,1100)); // 無料サーバーへの負荷配慮
   }
   resolving = false;
-  if(editIdx===null && insPos===null){ if(S.step==="done") render(); else renderLog(); }
+  if(editIdx===null && insPos===null && !reportOpen){ if(S.step==="done") render(); else renderLog(); }
 }
 function updateNet(){
   const n = $("net"); if(!n) return;
