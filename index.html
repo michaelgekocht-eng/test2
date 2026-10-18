@@ -321,6 +321,41 @@ function download(){
   a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
 }
+// ---- 過去の日報(直近2回分) ----
+// 今回の日報(作業中)+過去2回分=合計3回分だけを端末に残し、それ以上は消去する
+const HKEY = "unten-nippo-hist-v1", HIST_MAX = 2;
+function loadHist(){ try{ const h = JSON.parse(localStorage.getItem(HKEY)); return Array.isArray(h) ? h.filter(e=>e && e.S && Array.isArray(e.S.rows)) : []; }catch(e){ return []; } }
+function saveHist(h){ try{ localStorage.setItem(HKEY, JSON.stringify(h.slice(0, HIST_MAX))); }catch(e){} }
+function histLabel(s){
+  const t = (s.rows[0]||{}).time || "";
+  const d = new Date(t.slice(0,10)+"T00:00:00"), wd = ["日","月","火","水","木","金","土"];
+  const day = isNaN(d) ? "日付不明" : `${d.getFullYear()}年${pad(d.getMonth()+1)}月${pad(d.getDate())}日(${wd[d.getDay()]})`;
+  return `${day}${t.length>=16 ? " "+t.slice(11,16)+"〜" : ""}${s.vehicle ? "　車両 "+s.vehicle : ""}`;
+}
+function openPast(){
+  const h = loadHist();
+  document.getElementById("modal").innerHTML = `<div class="mback"><div class="panel mpanel" role="dialog" aria-modal="true">
+    <p class="msg" style="font-size:20px">過去の日報を呼び出す</p>
+    <p class="note">過去２回分のデータのみ保存されています</p>
+    ${h.length ? h.map((e,i)=>`<button class="alt past-pick" data-i="${i}">${escH(histLabel(e.S))}</button>`).join("") : '<p class="note">呼び出せる日報はありません</p>'}
+    <button id="past-close" class="ghost">閉じる</button></div></div>`;
+  document.getElementById("past-close").onclick = ()=>{ document.getElementById("modal").innerHTML = ""; };
+  document.querySelectorAll(".past-pick").forEach(b=>b.onclick = ()=>recallPast(Number(b.dataset.i)));
+}
+// 選んだ日報を作業中の日報として開き、終業後点検の画面へ移る(その日報は過去分の一覧から外れる)
+function recallPast(i){
+  const h = loadHist(), e = h[i]; if(!e) return;
+  h.splice(i,1);
+  S = e.S; S.step = "done"; reportOpen = false;
+  save(); saveHist(h);
+  render();
+}
+// 「新しい日報を始める」: 今の日報を過去分の先頭に入れ、古いものから消す
+function archiveCurrent(){
+  if(!S.rows.length) return;
+  const h = loadHist(); h.unshift({S}); saveHist(h);
+}
+
 // ---- 日報PDF(端末内で生成。外部ライブラリ不要) ----
 // nippo.html を非表示のiframeで開き、紙面を画像化してA4横のPDFに包む
 let pdfCache = null;
@@ -640,7 +675,7 @@ function renderTop(){
   top.innerHTML = ((st==="arrive"||st==="depart") ? '<div class="tr"><button id="kiko">帰庫する</button><button id="kiko2">違法帰庫</button></div><div class="tr"><button id="shj">運行指示書</button><button id="fuel">給油</button></div>'
                 : st==="odoStart" ? '<div class="tr"><button id="deg">違法出庫</button></div>'
                 : st==="scan" ? '<div class="tr"><button id="pt" class="tiny" aria-label="手動で選択">点</button></div>'
-                : st==="done" ? '<div class="tr"><button id="dl">CSVをダウンロード</button></div>' : "") + mrg
+                : st==="home" ? '<div class="tr"><button id="past">過去の日報を呼び出す</button></div>' : "") + mrg
     + ((st==="odoStart"||st==="arrive"||st==="depart"||st==="fuel") ? `<div class="tr"><button id="vl" class="vlBtn">${vLabelFull()}</button></div>` : "");
   const $$ = id => document.getElementById(id);
   if(st==="arrive"||st==="depart"){
@@ -650,7 +685,7 @@ function renderTop(){
     $$("shj").onclick = openShijisho;
   }
   if(st==="odoStart") $$("deg").onclick = place("違法出庫");
-  if(st==="done") $$("dl").onclick = download;
+  if(st==="home") $$("past").onclick = openPast;
   if(st==="scan") $$("pt").onclick = openPick;
   if($$("mrg")) $$("mrg").onclick = ()=>{ mergeMode = true; mergeSel = []; editIdx = null; insPos = null; insMode = null; renderTop(); renderLog(); };
   if($$("mrgX")){
@@ -713,7 +748,6 @@ function render(){
          ${reportOpen ? `<div class="panel" style="margin:12px 0 0"><label for="rep-t">報告事項(事故・忘れ物等)</label>
            <textarea id="rep-t" rows="6" placeholder="なければ空欄のまま閉じてください">${escH(S.report||"")}</textarea>
            <button id="rep-close" class="ghost">閉じる</button></div>` : ""}
-         <button id="rpt" class="alt">日報作成</button>
          <p class="note" style="margin-top:16px">今日のデータを運行管理者に共有してください</p>
          ${S.rows.some(r=>r.lat && !r.addr) ? `<p class="err">住所が未取得の行があります。通信が戻ると自動で補完されます。緯度経度は記録済みです。</p>` : ""}
          <button id="sh">共有</button>
@@ -1067,7 +1101,6 @@ function bind(st){
 
   if(st==="done"){
     $("post").onclick = ()=>openCheck("終業後点検", POST_ITEMS);
-    $("rpt").onclick = ()=>{ location.href = "nippo.html"; };
     $("sh").onclick = share;
     $("rep").onclick = ()=>{ reportOpen = !reportOpen; render(); if(reportOpen){ const t = $("rep-t"); t.focus(); t.scrollIntoView({block:"center", behavior:"smooth"}); } };
     if(reportOpen){
@@ -1077,7 +1110,9 @@ function bind(st){
       $("rep-close").onclick = ()=>{ reportOpen = false; render(); };
     }
     pdfFile();
-    $("reset").onclick = ()=>{ if(confirm("記録を消去して新しく始めますか？ (CSVは保存済みですか？)")){ S=fresh(); reportOpen=false; save(); render(); } };
+    $("reset").onclick = ()=>{
+      if(confirm("新しい日報を始めますか？\n(今回の日報は、最初の画面の「過去の日報を呼び出す」から呼び出せます。保存されるのは過去2回分までです)")){
+        archiveCurrent(); S = fresh(); reportOpen = false; save(); render(); } };
   }
 }
 

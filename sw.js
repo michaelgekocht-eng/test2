@@ -1,5 +1,5 @@
 // 通信できるときは常に最新版を取得し、オフライン時や電波が弱いときは保存済みの版を使います
-const VERSION = "nippo-v25";
+const VERSION = "nippo-v26";
 const FILES = ["./","./index.html","./jsQR.js","./shijisho.html","./nippo.html","./manifest.json",
   "./icon-192.png","./icon-512.png","./icon-maskable-512.png","./apple-touch-icon.png"];
 
