@@ -333,16 +333,17 @@ async function nippoJpeg(){
   const fr = await loadNippoFrame();
   try{
     const d = fr.contentDocument, sheet = d.getElementById("sheet");
-    sheet.style.setProperty("--z","1"); sheet.style.margin = "0"; sheet.style.padding = "0";
+    sheet.style.setProperty("--z","1"); sheet.style.margin = "0";
     for(const im of sheet.querySelectorAll("img")){          // しるし画像を埋め込む
       try{ const r = await fetch(im.getAttribute("src")); if(r.ok) im.setAttribute("src", await blobToDataURL(await r.blob())); }catch(e){}
     }
     let css = ""; d.querySelectorAll("style").forEach(st=>css += st.textContent);
     css = css.replace(/@media print\{[\s\S]*\}\s*$/, "")
              .replace(/&/g,"&amp;").replace(/</g,"&lt;");
-    css += ".sheet{zoom:1!important;margin:0!important;padding:0!important}.hd input{border-color:transparent;background:transparent}";
+    css += ".sheet{zoom:1!important;margin:0!important}";
     const W = 1200, H = Math.ceil(sheet.getBoundingClientRect().height);
-    const inner = `<div xmlns="http://www.w3.org/1999/xhtml"><style>${css}</style>${new XMLSerializer().serializeToString(sheet)}</div>`;
+    const ff = d.defaultView.getComputedStyle(d.body).fontFamily.replace(/"/g,"'");   // 画面表示と同じフォント
+    const inner = `<div xmlns="http://www.w3.org/1999/xhtml" style="font-family:${ff};color:#333;line-height:normal"><style>${css}</style>${new XMLSerializer().serializeToString(sheet)}</div>`;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject width="100%" height="100%">${inner}</foreignObject></svg>`;
     const img = new Image();
     await new Promise((ok,ng)=>{ img.onload=ok; img.onerror=()=>ng(new Error("svg")); img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); });
