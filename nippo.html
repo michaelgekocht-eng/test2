@@ -53,6 +53,7 @@
     .rest .lbl{text-align:center;margin:28px 0 7px}
     .rest table{font-size:11px}
     .rest th,.rest td{height:25px}
+    .rest td.rp{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 3px}
     .rest .stamp{margin:9px auto 0}
     .alc{font-size:10px;margin-top:6px;color:#333;white-space:nowrap}
     .cir{display:inline-block;border:1px solid #000;border-radius:50%;line-height:1.2;padding:0 .25em;margin:-.1em -.2em}
@@ -123,7 +124,13 @@ const fuelRows = Array.from({length:Math.max(2, fuels.length)}, (_,i)=>{
   const f = fuels[i];
   return `<tr><th>${ZEN[i]||(i+1)}回目</th><td>${f?esc(f.odo):""}</td><td>${f?esc(f.fuel):""}</td></tr>`;
 }).join("");
-const restRows = [0,1,2].map(()=>`<tr><td>：　　〜　　：</td><td></td></tr>`).join("");
+// 休憩(アプリで記録した休憩時間・休憩場所)。3行に満たない分は空欄
+const rests = rows.filter(r=>r.kind==="休憩");
+const restRows = Array.from({length:Math.max(3, rests.length)}, (_,i)=>{
+  const r = rests[i];
+  return r ? `<tr><td>${hm(r.time)}　〜　${hm(r.end)}</td><td class="rp">${esc(r.addr||"")}</td></tr>`
+           : `<tr><td>：　　〜　　：</td><td></td></tr>`;
+}).join("");
 
 document.getElementById("sheet").innerHTML = `
 <h2 class="title">乗務日報（運転記録）${veh ? " - "+esc(veh) : ""}</h2>

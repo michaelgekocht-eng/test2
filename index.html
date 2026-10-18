@@ -14,11 +14,11 @@
 <style>
   :root{
     --bg:#f3f4f1; --panel:#ffffff; --ink:#1d2421; --sub:#5d6862; --line:#d5d9d3;
-    --go:#1f6b4a; --go-ink:#fff; --warn:#a4380f; --blue:#1d4f8a;
+    --go:#1f6b4a; --go-ink:#fff; --warn:#a4380f; --blue:#1d4f8a; --red:#d32f2f;
   }
   @media (prefers-color-scheme: dark){
     :root{ --bg:#141816; --panel:#1e2421; --ink:#eef2ee; --sub:#9aa69f; --line:#34403a;
-      --go:#3fae7e; --go-ink:#06140d; --warn:#ff9a70; --blue:#7fb2ee; }
+      --go:#3fae7e; --go-ink:#06140d; --warn:#ff9a70; --blue:#7fb2ee; --red:#ff5a5a; }
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);
@@ -60,6 +60,7 @@
   .tri{display:block;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;
     border-left:15px solid var(--blue);transition:transform .15s}
   .ins[aria-expanded="true"] .tri{transform:rotate(90deg)}
+  .ins.rest .tri{border-left-color:var(--red)}
   .grp.sel{border-color:var(--blue);background:var(--panel);background:color-mix(in srgb, var(--blue) 14%, var(--panel))}
   .mk{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--blue);font-size:15px;margin-bottom:8px}
   .mk input{width:26px;height:26px;margin:0;accent-color:var(--blue)}
@@ -164,7 +165,7 @@ function now(){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 function makeRow(kind, o={}){
-  return {kind, time:o.time||now(), odo:o.odo??"", fuel:o.fuel??"", lat:o.lat??"", lng:o.lng??"", addr:o.addr||"", note:o.note||""};
+  return {kind, time:o.time||now(), odo:o.odo??"", fuel:o.fuel??"", lat:o.lat??"", lng:o.lng??"", addr:o.addr||"", note:o.note||"", end:o.end||""};
 }
 function addRow(kind, o={}){ S.rows.push(makeRow(kind, o)); save(); }
 
@@ -302,9 +303,9 @@ function chooseManager(name){
 
 // ---- CSV ----
 function csvText(){
-  const head = ["種別","日時","車両番号","乗務員","Odoメーター","給油量(L)","緯度","経度","住所","備考"];
+  const head = ["種別","日時","車両番号","乗務員","Odoメーター","給油量(L)","緯度","経度","住所","備考","終了日時"];
   const esc = v => `"${String(v??"").replace(/"/g,'""')}"`;
-  return [head, ...S.rows.map(r=>[r.kind,r.time,S.vehicle||"",S.driver||"",r.odo,r.fuel,r.lat,r.lng,r.addr,r.note])]
+  return [head, ...S.rows.map(r=>[r.kind,r.time,S.vehicle||"",S.driver||"",r.odo,r.fuel,r.lat,r.lng,r.addr,r.note,r.end])]
     .map(a=>a.map(esc).join(",")).join("\r\n");
 }
 function csvFile(){
@@ -714,7 +715,7 @@ function render(){
   renderLog();
   bind(st);
 }
-const EDITABLE = ["業務開始","日常点検","出発点呼","乗務開始","出発","回送で到着","実車で到着","帰庫","給油"];
+const EDITABLE = ["業務開始","日常点検","出発点呼","乗務開始","出発","回送で到着","実車で到着","帰庫","給油","休憩"];
 const HAS_ODO = ["乗務開始","回送で到着","実車で到着","帰庫","給油"];
 const HAS_PLACE = ["乗務開始","出発","回送で到着","実車で到着","帰庫","給油"];
 let editIdx = null, insPos = null, insMode = null, mergeMode = false, mergeSel = [];
@@ -727,6 +728,9 @@ function editForm(r){
     f += `<label for="e-odo">Odoメーター</label><input id="e-odo" type="number" inputmode="numeric" min="0" step="1" value="${escH(r.odo)}">`;
   if(r.kind==="給油")
     f += `<label for="e-fuel">給油量 (L)</label><input id="e-fuel" type="number" inputmode="decimal" min="0" step="0.01" value="${escH(r.fuel)}">`;
+  if(r.kind==="休憩")
+    f += `<label for="e-end">終了日時</label><input id="e-end" type="datetime-local" step="1" value="${escH((r.end||"").replace(" ","T"))}">
+      <label for="e-addr">休憩場所</label><input id="e-addr" type="text" value="${escH(r.addr)}">`;
   if(HAS_PLACE.includes(r.kind))
     f += `<label for="e-addr">住所</label><input id="e-addr" type="text" value="${escH(r.addr)}">
       <label for="e-lat">緯度</label><input id="e-lat" type="text" inputmode="decimal" value="${escH(r.lat)}">
@@ -757,6 +761,8 @@ function groupRows(){
     }else if(k==="給油"){
       // 出発〜到着の間なら同じ枠、到着〜出発の間なら給油だけの独立した枠
       if(last && last.type==="leg" && last.open) last.items.push(i); else g.push({type:"fuel", items:[i]});
+    }else if(k==="休憩"){
+      if(last && last.type==="leg" && last.open) last.items.push(i); else g.push({type:"rest", items:[i]});
     }else if(k==="回送で到着"||k==="実車で到着"){
       if(last && last.type==="leg" && last.open){ last.items.push(i); last.open = false; }
       else g.push({type:"leg", items:[i], open:false});
@@ -778,7 +784,7 @@ function isSelLeg(g){
 }
 function legsOf(gs){
   const legs = []; let seg = 0;
-  gs.forEach(g=>{ if(isSelLeg(g)) legs.push({g, seg}); else if(g.type!=="fuel") seg++; });
+  gs.forEach(g=>{ if(isSelLeg(g)) legs.push({g, seg}); else if(g.type!=="fuel" && g.type!=="rest") seg++; });
   return legs;
 }
 // 連続した組だけ選べる: 追加は両端の隣のみ、解除は両端のみ
@@ -819,7 +825,7 @@ function renderLog(){
     const r = S.rows[i];
     const tag = (EDITABLE.includes(r.kind) && !mergeMode)
       ? `<button class="tag" data-i="${i}" aria-expanded="${editIdx===i}">${r.kind}</button>` : `<b>${r.kind}</b>`;
-    return `<div class="rec">${tag} ${r.time}${r.odo!==""?` / ${escH(r.odo)} km`:""}${r.fuel!==undefined&&r.fuel!==""?` / 給油 ${escH(r.fuel)} L`:""}${r.addr?`<br>${escH(r.addr)}`:""}${editIdx===i?editForm(r):""}</div>`;
+    return `<div class="rec">${tag} ${r.time}${r.kind==="休憩"&&r.end?` 〜 ${r.end.slice(0,10)===r.time.slice(0,10)?r.end.slice(11):r.end}`:""}${r.odo!==""?` / ${escH(r.odo)} km`:""}${r.fuel!==undefined&&r.fuel!==""?` / 給油 ${escH(r.fuel)} L`:""}${r.addr?`<br>${escH(r.addr)}`:""}${editIdx===i?editForm(r):""}</div>`;
   };
   // 新しい組を上に表示。1組(出発→到着)を四角い枠で囲む
   const gs = groupRows(), out = [], legs = legsOf(gs), ordOf = new Map(legs.map((L,o)=>[L.g,o]));
@@ -830,8 +836,8 @@ function renderLog(){
     out.push(`<li class="grp${on?" sel":""}">${box}${gs[k].items.map(recHtml).join("")}</li>`);
     if(k>0){
       // 枠と枠の間: 移動(出発〜到着)・給油の枠の後ろにだけ、データ挿入用の三角印を出す
-      const prev = gs[k-1], pos = prev.items[prev.items.length-1] + 1, ok = (prev.type==="leg" || prev.type==="fuel") && S.rows[pos-1].kind!=="帰庫" && !mergeMode;
-      out.push(ok ? `<li class="gap"><button class="ins" data-pos="${pos}" aria-expanded="${insPos===pos}" aria-label="この位置にデータを挿入"><span class="tri"></span></button>${insPos===pos ? insertPanel(pos) : ""}</li>`
+      const prev = gs[k-1], pos = prev.items[prev.items.length-1] + 1, ok = (prev.type==="leg" || prev.type==="fuel" || prev.type==="rest") && S.rows[pos-1].kind!=="帰庫" && !mergeMode, red = ok && !!restGap(pos);
+      out.push(ok ? `<li class="gap"><button class="ins${red?" rest":""}" data-pos="${pos}" aria-expanded="${insPos===pos}" aria-label="${red?"この位置にデータを挿入(40分以上の空きあり・休憩を入力できます)":"この位置にデータを挿入"}"><span class="tri"></span></button>${insPos===pos ? insertPanel(pos) : ""}</li>`
                   : `<li class="gap"></li>`);
     }
   }
@@ -860,6 +866,7 @@ function renderLog(){
   if(gid("i-b-fuel")){
     gid("i-b-fuel").onclick = ()=>{ insMode = "fuel"; renderLog(); focusPanel(); };
     gid("i-b-leg").onclick = ()=>{ insMode = "leg"; renderLog(); focusPanel(); };
+    if(gid("i-b-rest")) gid("i-b-rest").onclick = ()=>{ insMode = "rest"; renderLog(); focusPanel(); };
     gid("i-close").onclick = ()=>{ insPos = null; renderLog(); };
   }
   if(gid("i-save")){
@@ -892,7 +899,7 @@ function deleteRow(i){
   S.rows = S.rows.filter((_,j)=>!idx.includes(j));
   const m = S.rows.slice().reverse().find(r=>r.kind==="出発点呼");
   S.manager = m ? mgrFromNote(m.note) : "";
-  let li = S.rows.length-1; while(li>=0 && S.rows[li].kind==="給油") li--;
+  let li = S.rows.length-1; while(li>=0 && (S.rows[li].kind==="給油" || S.rows[li].kind==="休憩")) li--;
   const last = S.rows[li];
   S.step = last ? (STEP_AFTER[last.kind] || "arrive") : "home";
   editIdx = null; save(); render();
@@ -900,8 +907,14 @@ function deleteRow(i){
 // ---- 枠と枠の間へのデータ手入力(挿入) ----
 function insertPanel(pos){
   const tv = ((S.rows[pos-1]||{}).time || now()).replace(" ","T");
-  if(!insMode) return `<div class="edit"><p class="note" style="margin:0">この位置に挿入するデータを選んでください</p>
-    <div class="row"><button id="i-b-fuel">給油</button><button id="i-b-leg" class="alt">出発〜到着</button></div>
+  const gp = restGap(pos);
+  if(insMode==="rest" && gp) return `<div class="edit"><p class="msg" style="font-size:18px;margin:0">休憩を挿入</p>
+    <p class="note">休憩時間(自動): ${escH(gp.start.slice(11,16))} 〜 ${escH(gp.end.slice(11,16))}</p>
+    <label for="i-addr">休憩場所</label><input id="i-addr" type="text" autocomplete="off">
+    <p class="err" id="i-err"></p>
+    <div class="row"><button id="i-save">この内容で挿入</button><button id="i-back" class="ghost">戻る</button></div></div>`;
+  if(!insMode || insMode==="rest") return `<div class="edit"><p class="note" style="margin:0">この位置に挿入するデータを選んでください</p>
+    <div class="row"><button id="i-b-fuel">給油</button><button id="i-b-leg" class="alt">出発〜到着</button>${gp?`<button id="i-b-rest" style="grid-column:1/-1;background:var(--red);color:#fff">休憩</button>`:""}</div>
     <button id="i-close" class="del">閉じる</button></div>`;
   const leg = insMode==="leg";
   return `<div class="edit"><p class="msg" style="font-size:18px;margin:0">${leg ? "出発〜到着を挿入" : "給油を挿入"}</p>
@@ -914,6 +927,17 @@ function insertPanel(pos){
     <p class="err" id="i-err"></p>
     <div class="row"><button id="i-save">この内容で挿入</button><button id="i-back" class="ghost">戻る</button></div></div>`;
 }
+// 到着(pos-1)から次の出発までが40分以上あいていて、まだ休憩がなければ、休憩時間(到着+5分〜出発-5分)を返す
+function restGap(pos){
+  const a = S.rows[pos-1]; if(!a || !ARR.includes(a.kind)) return null;
+  let j = pos;
+  while(S.rows[j] && (S.rows[j].kind==="給油" || S.rows[j].kind==="休憩")){ if(S.rows[j].kind==="休憩") return null; j++; }
+  const d = S.rows[j]; if(!d || d.kind!=="出発") return null;
+  const ta = new Date(a.time.replace(" ","T")).getTime(), td = new Date(d.time.replace(" ","T")).getTime();
+  if(isNaN(ta) || isNaN(td) || td-ta < 40*60000) return null;
+  const f = ms => { const x = new Date(ms); return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())} ${pad(x.getHours())}:${pad(x.getMinutes())}:${pad(x.getSeconds())}`; };
+  return {start:f(ta+5*60000), end:f(td-5*60000)};
+}
 function odoBounds(pos){
   const f = (start, dir) => { for(let j=start; j>=0 && j<S.rows.length; j+=dir){
     if(/^\d+$/.test(String(S.rows[j].odo))) return {o:Number(S.rows[j].odo), k:S.rows[j].kind}; } return null; };
@@ -921,6 +945,14 @@ function odoBounds(pos){
 }
 function saveInsert(){
   const pos = insPos, g = id => document.getElementById(id), err = g("i-err"), leg = insMode==="leg";
+  if(insMode==="rest"){
+    const gp = restGap(pos);
+    if(!gp){ err.textContent = "この位置には休憩を入れられません"; return; }
+    S.rows.splice(pos, 0, makeRow("休憩", {time:gp.start, end:gp.end, addr:g("i-addr").value.trim(), note:"手入力"}));
+    insPos = null; insMode = null; save();
+    if(S.step==="done") render(); else renderLog();
+    return;
+  }
   const fix = v => { let t = v.replace("T"," "); if(t.length===16) t += ":00"; return t; };
   if(!g("i-time").value){ err.textContent = "日時を入力してください"; return; }
   const time1 = fix(g("i-time").value);
@@ -965,6 +997,14 @@ function saveEdit(i){
     const pv = near(-1), nx = near(1), n = Number(odo);
     if(pv && (r.kind==="給油" ? n<pv.o : n<=pv.o)){ err.textContent = "前回の入力値より大きな値を入力してください"; return; }
     if(nx && ((r.kind==="給油"||nx.k==="給油") ? n>nx.o : n>=nx.o)){ err.textContent = "次の記録の値より小さな値を入力してください"; return; }
+  }
+  if(r.kind==="休憩"){
+    addr = g("e-addr").value.trim();
+    let te = g("e-end").value;
+    if(!te){ err.textContent = "終了日時を入力してください"; return; }
+    te = te.replace("T"," "); if(te.length===16) te += ":00";
+    if(te < t){ err.textContent = "終了日時は開始日時より後にしてください"; return; }
+    r.end = te;
   }
   if(HAS_PLACE.includes(r.kind)){
     addr = g("e-addr").value.trim(); lat = g("e-lat").value.trim(); lng = g("e-lng").value.trim();
