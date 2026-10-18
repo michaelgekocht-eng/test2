@@ -350,7 +350,7 @@ function recallPast(i){
   save(); saveHist(h);
   render();
 }
-// 「新しい日報を始める」: 今の日報を過去分の先頭に入れ、古いものから消す
+// 「本日の業務を終了する」: 今の日報を過去分の先頭に入れ、古いものから消す
 function archiveCurrent(){
   if(!S.rows.length) return;
   const h = loadHist(); h.unshift({S}); saveHist(h);
@@ -751,7 +751,7 @@ function render(){
          <p class="note" style="margin-top:16px">今日のデータを運行管理者に共有してください</p>
          ${S.rows.some(r=>r.lat && !r.addr) ? `<p class="err">住所が未取得の行があります。通信が戻ると自動で補完されます。緯度経度は記録済みです。</p>` : ""}
          <button id="sh">共有</button>
-         <button id="reset" class="ghost">新しい日報を始める</button></div>`;
+         <button id="reset" class="ghost">本日の業務を終了する</button></div>`;
   }
   view.innerHTML = h;
   renderLog();
@@ -1111,8 +1111,13 @@ function bind(st){
     }
     pdfFile();
     $("reset").onclick = ()=>{
-      if(confirm("新しい日報を始めますか？\n(今回の日報は、最初の画面の「過去の日報を呼び出す」から呼び出せます。保存されるのは過去2回分までです)")){
-        archiveCurrent(); S = fresh(); reportOpen = false; save(); render(); } };
+      document.getElementById("modal").innerHTML = `<div class="mback"><div class="panel mpanel" role="dialog" aria-modal="true">
+        <p class="msg" style="font-size:34px;text-align:center;margin:8px 0 16px">お疲れ様でした</p>
+        <p style="margin:0 0 12px;line-height:1.6">今回のデータを含めて過去３回分の日報データは保存されます。必要に応じてご自身で保存してください</p>
+        <button id="end-ok">OK</button><button id="end-no" class="ghost">キャンセル</button></div></div>`;
+      $("end-no").onclick = ()=>{ document.getElementById("modal").innerHTML = ""; };
+      $("end-ok").onclick = ()=>{ archiveCurrent(); S = fresh(); reportOpen = false; save(); render(); };
+    };
   }
 }
 
