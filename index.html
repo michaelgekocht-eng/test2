@@ -592,35 +592,48 @@ function setVLang(v){   // 最初の画面の選択ボタン・右上の切り�
 }
 const micBtns = id => `<button type="button" class="micBtn" data-for="${id}" aria-label="音声入力">🎤</button>`;
 const VSTAT = {"odo":"status", "m-odo":"m-status", "f-odo":"status"};
+// 音声認識エンジンは、話し終えてから約1秒の無音を待って結果を確定する(この待ち時間はアプリ側では変えられない)。
+// そこで途中経過の認識結果を使い、途中経過が変わらなくなってから EARLY_MS ミリ秒で先に入力する。
+// 確定した結果がそれと違えば、確定結果で上書きする(入力欄を手で直した場合は上書きしない)。
+const EARLY_MS = 300;
 let curRec = null;
 function listenOdo(inputId, btn){
   const say = t => { const e = document.getElementById(VSTAT[inputId]); if(e) e.textContent = t; };
   if(curRec){ try{ curRec.stop(); }catch(e){} return; }                      // 録音中にもう一度押すと停止
   if(!SR){ say("この端末・ブラウザでは音声入力を使えません。手入力してください。"); return; }
   const rec = new SR(); curRec = rec;
-  rec.lang = vlang()==="zh" ? "zh-CN" : "ja-JP"; rec.interimResults = false; rec.maxAlternatives = 5; rec.continuous = false;
+  rec.lang = vlang()==="zh" ? "zh-CN" : "ja-JP"; rec.interimResults = true; rec.maxAlternatives = 5; rec.continuous = false;
   btn.classList.add("rec"); say(vlang()==="zh" ? "请说出里程数…" : "Odoメーターの数字を話してください…");
-  let got = false;
+  let got = false, filled = null, timer = null;
+  const fill = (v, t, force)=>{
+    const el = document.getElementById(inputId);
+    if(el && (force || filled === null || el.value === filled)){ el.value = v; el.dispatchEvent(new Event("input", {bubbles:true})); filled = v; }
+    say(`「${t}」→ ${v} と聞き取りました。確認してください。`);
+  };
   rec.onresult = ev=>{
-    got = true;
-    const alts = Array.from(ev.results[0]).map(a=>a.transcript);
+    const res = ev.results[ev.results.length-1];
+    const alts = Array.from(res).map(a=>a.transcript);
+    if(!res.isFinal){                                    // 途中経過: 数値に読めて、EARLY_MS 変化がなければ先に入力する
+      clearTimeout(timer);
+      const v = speechToOdo(alts[0]);
+      if(v !== null) timer = setTimeout(()=>{ if(curRec === rec) fill(v, alts[0]); }, EARLY_MS);
+      return;
+    }
+    clearTimeout(timer); got = true;
     for(const t of alts){
       const v = speechToOdo(t);
-      if(v !== null){
-        const el = document.getElementById(inputId);
-        if(el){ el.value = v; el.dispatchEvent(new Event("input", {bubbles:true})); }
-        say(`「${t}」→ ${v} と聞き取りました。確認してください。`); return;
-      }
+      if(v !== null){ fill(v, t); return; }
     }
-    say(`数値として聞き取れませんでした(「${alts[0]}」)。もう一度、または手入力してください。`);
+    if(filled === null) say(`数値として聞き取れませんでした(「${alts[0]}」)。もう一度、または手入力してください。`);
   };
   rec.onerror = ev=>{
-    got = true;
+    clearTimeout(timer); got = true;
+    if(filled !== null) return;                          // 先に入力できていれば、そのまま使う
     const msg = {"not-allowed":"マイクの使用が許可されていません。", "service-not-allowed":"音声入力が許可されていません。", "no-speech":"音声が聞こえませんでした。",
       "network":"音声認識には通信が必要です。", "audio-capture":"マイクが見つかりません。", "language-not-supported":"この言語には対応していません。"}[ev.error];
     say((msg || "音声入力に失敗しました。") + "手入力もできます。");
   };
-  rec.onend = ()=>{ btn.classList.remove("rec"); curRec = null; if(!got) say("聞き取れませんでした。もう一度お試しください。"); };
+  rec.onend = ()=>{ clearTimeout(timer); btn.classList.remove("rec"); curRec = null; if(!got && filled === null) say("聞き取れませんでした。もう一度お試しください。"); };
   try{ rec.start(); }catch(e){ btn.classList.remove("rec"); curRec = null; say("音声入力を開始できませんでした。"); }
 }
 document.addEventListener("click", e=>{
